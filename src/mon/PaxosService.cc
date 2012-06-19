@@ -30,13 +30,49 @@ static ostream& _prefix(std::ostream *_dout, Monitor *mon, Paxos *paxos, string 
 		<< ").paxosservice(" << service_name << ") ";
 }
 
+bool PaxosService::is_readable(version_t ver)
+{
+  if (ver > get_last_committed()) {
+    dout(20) << __func__ << " v" << ver
+	     << " > last committed v" << get_last_committed() << dendl;
+    return false;
+  }
+
+  if (!mon->is_peon() && !mon->is_leader()) {
+    dout(20) << __func__ << " peon = " << mon->is_peon()
+	     << "; leader = " << mon->is_leader() << dendl;
+    return false;
+  }
+
+  if (is_proposing() || paxos->is_recovering()) {
+    dout(20) << __func__ << " proposing = " << is_proposing()
+	     << "; recovering = " << paxos->is_recovering() << dendl;
+    if (is_proposing())
+      dout(20) << __func__ << " paxos state: active = " << paxos->is_active()
+	       << "; updating = " << paxos->is_updating() << dendl;
+    return false;
+  }
+
+  if (get_last_committed() <= 0) {
+    dout(20) << __func__ << " last committed <= 0" << dendl;
+    return false;
+  }
+
+  if ((mon->get_quorum().size() != 1) && !paxos->is_lease_valid()) {
+    dout(20) << __func__ << " quorum = " << mon->get_quorum().size()
+	     << "; valid lease = " << paxos->is_lease_valid() << dendl;
+    return false;
+  }
+  return true;
+}
+
 bool PaxosService::dispatch(PaxosServiceMessage *m)
 {
   dout(10) << "dispatch " << *m << " from " << m->get_orig_source_inst() << dendl;
   // make sure our map is readable and up to date
   if (!is_readable(m->version)) {
     dout(10) << " waiting for paxos -> readable (v" << m->version << ")" << dendl;
-    paxos->wait_for_readable(new C_RetryMessage(this, m));
+    wait_for_readable(new C_RetryMessage(this, m));
     return true;
   }
 
@@ -56,7 +92,7 @@ bool PaxosService::dispatch(PaxosServiceMessage *m)
   // writeable?
   if (!is_writeable()) {
     dout(10) << " waiting for paxos -> writeable" << dendl;
-    paxos->wait_for_writeable(new C_RetryMessage(this, m));
+    wait_for_writeable(new C_RetryMessage(this, m));
     return true;
   }
 
@@ -145,8 +181,8 @@ void PaxosService::propose_pending()
 
   // apply to paxos
 //  paxos->wait_for_commit_front(new C_Active(this));
-  proposing = true;
-  paxos->propose_new_value(bl, new C_Active(this));
+  proposing.set(1);
+  paxos->propose_new_value(bl, new C_Committed(this));
 }
 
 
@@ -175,14 +211,14 @@ void PaxosService::election_finished()
   if (is_active())
     _active();
   else
-    paxos->wait_for_active(new C_Active(this));
+    wait_for_active(new C_Active(this));
 }
 
 void PaxosService::_active()
 {
   if (!is_active()) {
     dout(10) << "_active - not active" << dendl;
-    paxos->wait_for_active(new C_Active(this));
+    wait_for_active(new C_Active(this));
     return;
   }
   dout(10) << "_active" << dendl;
@@ -248,6 +284,10 @@ int PaxosService::get_version(const string& prefix, version_t ver,
   return mon->store->get(get_service_name(), key, bl);
 }
 
+void PaxosService::wakeup_proposing_waiters()
+{
+  finish_contexts(g_ceph_context, waiting_for_finished_proposal);
+}
 
 void PaxosService::trim_to(version_t first, bool force)
 {
@@ -298,7 +338,6 @@ void PaxosService::C_Active::finish(int r)
     dout(10) << __func__ << " Going active for " << svc->get_service_name() << dendl;
 #undef dout_prefix
 #define dout_prefix _prefix(_dout, mon, paxos, service_name)
-    svc->proposing = false;
     svc->_active();
   }
 }
