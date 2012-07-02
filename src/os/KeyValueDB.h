@@ -91,6 +91,7 @@ public:
   };
   typedef std::tr1::shared_ptr< IteratorImpl > Iterator;
   virtual Iterator get_iterator(const string &prefix) = 0;
+  virtual Iterator get_iterator() = 0;
 
   virtual ~KeyValueDB() {}
 };
