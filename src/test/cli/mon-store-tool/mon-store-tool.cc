@@ -1,5 +1,5 @@
 // -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
-// vim: ts=8 sw=2 smarttab
+// vim: ts=4 sw=2 smarttab
 /*
 * Ceph - scalable distributed file system
 *
@@ -33,7 +33,9 @@ int main(int argc, char *argv[])
 	KeyValueDB::Iterator it = ldb.get_iterator(prefix);
 	it->seek_to_first();
 	while (it->valid()) {
-		std::cout << "key = " << it->key() << std::endl;
+	  pair<string,string> raw_key = it->raw_key();
+	  std::cout << "prefix = " << raw_key.first
+			    << " key = " << raw_key.second << std::endl;
 		ostringstream os;
 		it->value().hexdump(os);
 		string hex = os.str();
