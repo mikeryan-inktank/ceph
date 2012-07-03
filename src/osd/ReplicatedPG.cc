@@ -6493,7 +6493,7 @@ void ReplicatedPG::clean_up_local(ObjectStore::Transaction& t)
 // SCRUB
 
 
-int ReplicatedPG::_scrub(ScrubMap& scrubmap, int& errors, int& fixed)
+int ReplicatedPG::_scrub(ScrubMap& scrubmap, int* errors, int* fixed)
 {
   dout(10) << "_scrub" << dendl;
 
@@ -6524,7 +6524,7 @@ int ReplicatedPG::_scrub(ScrubMap& scrubmap, int& errors, int& fixed)
       if (p->second.attrs.count(SS_ATTR) == 0) {
 	osd->clog.error() << mode << " " << info.pgid << " " << soid
 			  << " no '" << SS_ATTR << "' attr";
-	errors++;
+	++(*errors);
 	continue;
       }
       bufferlist bl;
@@ -6536,7 +6536,7 @@ int ReplicatedPG::_scrub(ScrubMap& scrubmap, int& errors, int& fixed)
       if (head != hobject_t()) {
 	osd->clog.error() << mode << " " << info.pgid << " " << head
 			  << " missing clones";
-	errors++;
+	++(*errors);
       }
       
       // what will be next?
@@ -6569,7 +6569,7 @@ int ReplicatedPG::_scrub(ScrubMap& scrubmap, int& errors, int& fixed)
     if (p->second.attrs.count(OI_ATTR) == 0) {
       osd->clog.error() << mode << " " << info.pgid << " " << soid
 			<< " no '" << OI_ATTR << "' attr";
-      errors++;
+      ++(*errors);
       continue;
     }
     bufferlist bv;
@@ -6580,7 +6580,7 @@ int ReplicatedPG::_scrub(ScrubMap& scrubmap, int& errors, int& fixed)
       osd->clog.error() << mode << " " << info.pgid << " " << soid
 			<< " on disk size (" << p->second.size
 			<< ") does not match object info size (" << oi.size << ")";
-      ++errors;
+      ++(*errors);
     }
 
     dout(20) << mode << "  " << soid << " " << oi << dendl;
@@ -6595,7 +6595,7 @@ int ReplicatedPG::_scrub(ScrubMap& scrubmap, int& errors, int& fixed)
       if (!snapset.head_exists) {
 	osd->clog.error() << mode << " " << info.pgid << " " << soid
 			  << " snapset.head_exists=false, but object exists";
-	errors++;
+	++(*errors);
 	continue;
       }
     } else if (soid.snap) {
@@ -6607,7 +6607,7 @@ int ReplicatedPG::_scrub(ScrubMap& scrubmap, int& errors, int& fixed)
       if (soid.snap != *curclone) {
 	osd->clog.error() << mode << " " << info.pgid << " " << soid
 			  << " expected clone " << *curclone;
-	++errors;
+	++(*errors);
 	assert(soid.snap == *curclone);
       }
 
@@ -6645,10 +6645,10 @@ int ReplicatedPG::_scrub(ScrubMap& scrubmap, int& errors, int& fixed)
 		      << cstat.sum.num_objects << "/" << info.stats.stats.sum.num_objects << " objects, "
 		      << cstat.sum.num_object_clones << "/" << info.stats.stats.sum.num_object_clones << " clones, "
 		      << cstat.sum.num_bytes << "/" << info.stats.stats.sum.num_bytes << " bytes.\n";
-    errors++;
+    ++(*errors);
 
     if (repair) {
-      fixed++;
+      ++(*fixed);
       info.stats.stats = cstat;
       update_stats();
       share_pg_info();
@@ -6656,7 +6656,7 @@ int ReplicatedPG::_scrub(ScrubMap& scrubmap, int& errors, int& fixed)
   }
 
   dout(10) << "_scrub (" << mode << ") finish" << dendl;
-  return errors;
+  return (*errors);
 }
 
 /*---SnapTrimmer Logging---*/
