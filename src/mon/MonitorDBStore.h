@@ -244,6 +244,32 @@ class MonitorDBStore
     return combine_strings(prefix, os.str());
   }
 
+  void clear(set<string>& exceptions) {
+    LevelDBStore::Iterator it = db->get_iterator();
+    it->seek_to_first();
+
+    Transaction t;
+
+    while (it->valid()) {
+      pair<string,string> raw_key = it->raw_key();
+
+      // this prefix is not on the exceptions list
+      if (exceptions.find(raw_key.first) == exceptions.end()) {
+	t.erase(raw_key.first, raw_key.second);
+      }
+
+      it->next();
+    }
+
+    if (!t.empty())
+      apply_transaction(t);
+  }
+
+  void clear() {
+    set<string> exceptions;
+    clear(exceptions);
+  }
+
   MonitorDBStore(const string& path) : db(0) {
 
     string::const_reverse_iterator rit;
