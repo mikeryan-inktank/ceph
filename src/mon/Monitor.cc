@@ -28,6 +28,7 @@
 #include "messages/MGenericMessage.h"
 #include "messages/MMonCommand.h"
 #include "messages/MMonCommandAck.h"
+#include "messages/MMonSync.h"
 #include "messages/MMonProbe.h"
 #include "messages/MMonJoin.h"
 #include "messages/MMonPaxos.h"
@@ -534,6 +535,133 @@ void Monitor::reset()
 
   for (vector<PaxosService*>::iterator p = paxos_service.begin(); p != paxos_service.end(); p++)
     (*p)->restart();
+}
+
+void Monitor::sync_cancel_timeout()
+{
+  if (sync_timeout_event) {
+    dout(10) << __func__ << " " << sync_timeout_event << dendl;
+    timer.cancel_event(sync_timeout_event);
+    sync_timeout_event = NULL;
+  } else
+    dout(10) << __func__ << " none scheduled" << dendl;
+}
+
+void Monitor::sync_reset_timeout()
+{
+  sync_cancel_timeout();
+  sync_timeout_event = new C_SyncTimeout(this);
+  timer.add_event_after(30.0, sync_timeout_event);
+  dout(10) << __func__ << " " << sync_timeout_event
+	   << " after 30.0 seconds" << dendl;
+}
+
+// requester (new mon)
+void Monitor::sync_start(entity_inst_t& other_mon)
+{
+  state = STATE_SYNCHRONIZING;
+
+  set<string> clear_exceptions;
+  clear_exceptions.insert(MONITOR_NAME);
+  store->clear(clear_exceptions);
+
+  MonitorDBStore::Transaction t;
+  t.put("sync", "ongoing", 1);
+  store->apply_transaction(t);
+
+  sync_reset_timeout();
+
+  MMonSync *m = new MMonSync(MMonSync::OP_START);
+  messenger->send_message(m, other_mon);
+}
+
+
+void Monitor::sync_start_chunks(MMonSync *m)
+{
+  MonitorDBStore::Synchronizer *synchronizer = store->get_synchronizer();
+  sync_send_chunk(m->get_source_inst());
+}
+
+/**
+ * We gotta figure out how this will deal with one or more monitors trying
+ * to synchronize, on different versions. Should we keep a map? And a
+ * lowest requested version? Allow trimming our state whenever we don't
+ * need some of the earliest versions? Is this overthinking it?
+ */
+// only on leader
+void Monitor::sync_trim_disable()
+{
+  assert(mon->is_leader());
+  dout(10) << __func__ << dendl;
+}
+
+// provider (old mon)
+void Monitor::handle_sync_start(MMonSync *m)
+{
+  dout(10) << __func__ << *m << dendl;
+
+  if (!mon->is_leader()) {
+    dout(10) << __func__
+	     <<" asking leader to disable trim; waiting for reply" << dendl;
+
+    MMonSync *m = MMonSync(MMonSync::OP_TRIM_DISABLE);
+    int leader = get_leader();
+    messenger->send_message(m, monmap->get_inst(leader));
+    return;
+  }
+
+  trim_disable();
+  sync_start_chunks(m);
+}
+
+// provider (old mon) && not the leader
+void Monitor::handle_sync_trim_disable_ack(MMonSync *m)
+{
+  assert(!mon->is_leader());
+  sync_start_chunks(m);
+}
+
+// leader-only
+void Monitor::handle_sync_trim_disable(MMonSync *m)
+{
+  assert(mon->is_leader());
+
+  trim_disable();
+
+  MMonSync *sm = new MMonSync(MMonSync::OP_TRIM_DISABLE_ACK);
+  sm->version = get_version();
+
+  messenger->send_message(sm, m->get_source_inst());
+  m->put();
+}
+
+void Monitor::handle_sync(MMonSync *m)
+{
+  dout(10) << __func__ << " " << *m << dendl;
+  switch (m->op) {
+  case MMonSync::OP_START:
+    handle_sync_start(m);
+    break;
+  case MMonSync::OP_CHUNK:
+    handle_sync_chunk(m);
+    break;
+  case MMonSync::OP_CHUNK_ACK:
+    handle_sync_chunk_ack(m);
+    break;
+  case MMonSync::OP_TRIM_DISABLE:
+    handle_sync_trim_disable(m);
+    break;
+  case MMonSync::OP_TRIM_ENABLE:
+    handle_sync_trim_enable(m);
+    break;
+  case MMonSync::OP_TRIM_DISABLE_ACK:
+    handle_sync_trim_disable_ack(m);
+    break;
+  default:
+    dout(0) << __func__ << " unknown op " << m->op << dendl;
+    assert(0);
+    break;
+  }
 }
 
 void Monitor::cancel_probe_timeout()
@@ -1670,6 +1798,11 @@ bool Monitor::_ms_dispatch(Message *m)
 
     case MSG_MON_PROBE:
       handle_probe((MMonProbe*)m);
+      break;
+
+    // Sync (i.e., the new slurp, but on steroids)
+    case MSG_MON_SYNC:
+      handle_sync((MMonSync*)m);
       break;
 
       // OSDs

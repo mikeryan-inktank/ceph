@@ -85,6 +85,7 @@ class AdminSocketHook;
 
 class MMonGetMap;
 class MMonGetVersion;
+class MMonSync;
 class MMonProbe;
 class MMonSubscribe;
 class MAuthRotating;
@@ -139,6 +140,7 @@ private:
   enum {
     STATE_PROBING = 1,
     STATE_SLURPING,
+    STATE_SYNCHRONIZING,
     STATE_ELECTING,
     STATE_LEADER,
     STATE_PEON,
@@ -151,6 +153,7 @@ public:
     switch (s) {
     case STATE_PROBING: return "probing";
     case STATE_SLURPING: return "slurping";
+    case STATE_SYNCHRONIZING: return "synchronizing";
     case STATE_ELECTING: return "electing";
     case STATE_LEADER: return "leader";
     case STATE_PEON: return "peon";
@@ -163,6 +166,7 @@ public:
 
   bool is_probing() const { return state == STATE_PROBING; }
   bool is_slurping() const { return state == STATE_SLURPING; }
+  bool is_synchronizing() const { return state == STATE_SYNCHRONIZING; }
   bool is_electing() const { return state == STATE_ELECTING; }
   bool is_leader() const { return state == STATE_LEADER; }
   bool is_peon() const { return state == STATE_PEON; }
@@ -183,6 +187,68 @@ private:
   set<string> outside_quorum;
   entity_inst_t slurp_source;
   map<string,version_t> slurp_versions;
+
+  /**
+   * @defgroup Synchronization
+   * @{
+   */
+  Context *sync_timeout_event;
+
+  /**
+   * @defgroup Leader-specific
+   * @{
+   */
+
+  version_t sync_trim_lowest_version;
+  map<entity_inst_t, version_t> sync_trim_peers;
+  Context *sync_trim_timeout_event;
+
+  void sync_cancel_trim_timeout();
+  void sync_reset_trim_timeout();
+  void sync_trim_timeout();
+
+  void sync_trim_disable_ack(MMonPaxos *m);
+
+  struct C_SyncTrimTimeout : public Context {
+    Monitor *mon;
+    C_SyncTrimTimeout(Monitor *m) : mon(m) { }
+    void finish(int r) {
+    //  mon->sync_trim_timeout();
+    }
+  };
+
+  struct C_SyncDisableTrimAck : public Context {
+    Monitor *mon;
+    MMonSync *msg;
+    C_SyncDisableTrimAck(Monitor *m, MMonSync sync_msg)
+      : mon(m), msg(sync_msg) { }
+    void finish(int r) {
+    //  mon->sync_trim_disable_ack(m);
+    }
+  };
+
+  /**
+   * @}
+   */
+
+  struct C_SyncTimeout : public Context {
+    Monitor *mon;
+    C_SyncTimeout(Monitor *m) : mon(m) { }
+    void finish(int r) {
+    // @todo mon->sync_timeout(r);
+    }
+  };
+
+  void sync_cancel_timeout();
+  void sync_reset_timeout();
+  void sync_start(entity_inst_t& other_mon);
+
+
+  void sync_start_chunks(MMonSync *m);
+
+  /**
+   * @}
+   */
 
   list<Context*> waitfor_quorum;
   list<Context*> maybe_wait_for_quorum;
@@ -294,6 +360,14 @@ public:
 
   void reply_command(MMonCommand *m, int rc, const string &rs, version_t version);
   void reply_command(MMonCommand *m, int rc, const string &rs, bufferlist& rdata, version_t version);
+
+  /**
+   * Handle Synchronization-related messages.
+   */
+  void handle_sync(MMonSync *m);
+  void handle_sync_start(MMonSync *m);
+  void handle_sync_chunk(MMonSync *m);
+  void handle_sync_chunk_ack(MMonSync *m);
 
   void handle_probe(MMonProbe *m);
   /**
