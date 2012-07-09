@@ -94,6 +94,9 @@ public:
   virtual Iterator get_iterator(const string &prefix) = 0;
   virtual Iterator get_iterator() = 0;
 
+  virtual Iterator get_readonly_iterator(const string &prefix) = 0;
+  virtual Iterator get_readonly_iterator() = 0;
+
   virtual ~KeyValueDB() {}
 };
 
