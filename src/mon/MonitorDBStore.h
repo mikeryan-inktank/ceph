@@ -18,6 +18,7 @@
 #include <set>
 #include <map>
 #include <string>
+#include <tr1/memory>
 #include <boost/scoped_ptr.hpp>
 #include <sstream>
 #include "os/KeyValueDB.h"
@@ -25,12 +26,10 @@
 
 #include "common/Formatter.h"
 
-class MonitorDBStore
+struct MonitorDBStore
 {
-  boost::scoped_ptr<LevelDBStore> db;
 
- public:
-
+  // Operation
   struct Op {
     uint8_t type;
     string prefix;
@@ -62,6 +61,7 @@ class MonitorDBStore
     }
   };
 
+  // Transaction
   struct Transaction {
     list<Op> ops;
 
@@ -186,6 +186,7 @@ class MonitorDBStore
     return db->submit_transaction_sync(dbt);
   }
 
+  // Read operations
   int get(const string& prefix, const string& key, bufferlist& bl) {
     set<string> k;
     k.insert(key);
@@ -244,6 +245,10 @@ class MonitorDBStore
     return combine_strings(prefix, os.str());
   }
 
+  /**
+   * Clear all keys in the store, except for the ones with a prefix in the
+   * 'exceptions' list
+   */
   void clear(set<string>& exceptions) {
     LevelDBStore::Iterator it = db->get_iterator();
     it->seek_to_first();
@@ -270,7 +275,73 @@ class MonitorDBStore
     clear(exceptions);
   }
 
-  MonitorDBStore(const string& path) : db(0) {
+  // synchronizer
+  class SynchronizerImpl {
+    Iterator it;
+
+   public:
+    SynchronizerImpl(Iterator iter) : it(iter) {
+      it->seek_to_first();
+    }
+
+    void get_next_chunk(bufferlist& bl, size_t chunk_size = 0) {
+
+      if (!chunk_size)
+	chunk_size = g_conf->mon_store_max_chunk_size;
+
+      Transaction t;
+
+      size_t current_size = bl.length();
+
+      while (it->valid()) {
+
+	pair<string,string> raw_key = it->raw_key();
+	bufferlist value_bl = LevelDBStore::to_bufferlist(it->value());
+
+	/* break out of the cycle iff we already packed something, and what
+	 * we are about to pack, plus what we have already packed, has an
+	 * equal or greater size than the chunk size we are attempting to
+	 * build.
+	 */
+	if ((current_size > 0)
+	    && (current_size + value_bl.length() >= chunk_size)) {
+	  break;
+	}
+
+	t.put(raw_key.first, raw_key.second, value_bl);
+	it->next();
+      }
+
+      if (!t.empty()) {
+	t.encode(bl);
+	std::cout << __func__ << " packed " << bl.length() << " bytes" << std::endl;
+      }
+      else {
+	std::cout << __func__ << " has nothing to pack" << std::endl;
+      }
+    }
+
+    bool has_next_chunk() {
+      return it->valid();
+    }
+  };
+
+  typedef std::tr1::shared_ptr<SynchronizerImpl> Synchronizer;
+
+  Synchronizer get_synchronizer() {
+    if (!synchronizer.use_count())
+      synchronizer.reset(new SynchronizerImpl(db->get_readonly_iterator()));
+
+    return synchronizer;
+  }
+
+  void release_synchronizer() {
+    if (synchronizer.use_count()) {
+      synchronizer.reset();
+    }
+  }
+
+  MonitorDBStore(const string& path) : db(), synchronizer() {
 
     string::const_reverse_iterator rit;
     int pos = 0;
@@ -294,11 +365,14 @@ class MonitorDBStore
     assert(!db_ptr->init(cerr));
     db.reset(db_ptr);
   }
-  MonitorDBStore(LevelDBStore *db_ptr) {
+  MonitorDBStore(LevelDBStore *db_ptr) : synchronizer() {
     db.reset(db_ptr);
   }
   ~MonitorDBStore() { }
 
+ private:
+  boost::scoped_ptr<LevelDBStore> db;
+  Synchronizer synchronizer;
 };
 
 WRITE_CLASS_ENCODER(MonitorDBStore::Op);
