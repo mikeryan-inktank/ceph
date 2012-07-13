@@ -74,31 +74,50 @@ public:
     std::map<string, bufferlist> *out
     );
 
-  class LevelDBGenericIteratorImpl : public KeyValueDB::IteratorImpl {
+  class LevelDBWholeSpaceIteratorImpl :
+    public KeyValueDB::WholeSpaceIteratorImpl {
   protected:
     boost::scoped_ptr<leveldb::Iterator> dbiter;
-
   public:
-    LevelDBGenericIteratorImpl(leveldb::Iterator *iter) : dbiter(iter) { }
+    LevelDBWholeSpaceIteratorImpl(leveldb::Iterator *iter) :
+      dbiter(iter) { }
+    virtual ~LevelDBWholeSpaceIteratorImpl() { }
 
     int seek_to_first() {
       dbiter->SeekToFirst();
       return dbiter->status().ok() ? 0 : -1;
     }
+    int seek_to_first(const string &prefix) {
+      leveldb::Slice slice_prefix(prefix);
+      dbiter->Seek(slice_prefix);
+      return dbiter->status().ok() ? 0 : -1;
+    }
     int seek_to_last() {
       dbiter->SeekToLast();
       dbiter->Prev();
-
       return dbiter->status().ok() ? 0 : -1;
     }
-    int upper_bound(const string &after) {
-      lower_bound(after);
+    int seek_to_last(const string &prefix) {
+      string limit = past_prefix(prefix);
+      leveldb::Slice slice_limit(limit);
+      dbiter->Seek(slice_limit);
+
+      if (!dbiter->Valid()) {
+        dbiter->SeekToLast();
+      } else {
+        dbiter->Prev();
+      }
+      return dbiter->status().ok() ? 0 : -1;
+    }
+    int upper_bound(const string &prefix, const string &after) {
+      lower_bound(prefix, after);
       if (valid() && dbiter->key() == after)
 	next();
       return dbiter->status().ok() ? 0 : -1;
     }
-    int lower_bound(const string &to) {
-      leveldb::Slice slice_bound(to);
+    int lower_bound(const string &prefix, const string &to) {
+      string bound = combine_strings(prefix, to);
+      leveldb::Slice slice_bound(bound);
       dbiter->Seek(slice_bound);
       return dbiter->status().ok() ? 0 : -1;
     }
@@ -133,112 +152,19 @@ public:
     }
   };
 
-  class LevelDBIteratorImpl : public LevelDBGenericIteratorImpl {
-    const string prefix;
-  public:
-    LevelDBIteratorImpl(leveldb::Iterator *iter, const string &prefix) :
-      LevelDBGenericIteratorImpl(iter), prefix(prefix) {}
-    int seek_to_first() {
-      leveldb::Slice slice_prefix(prefix);
-      dbiter->Seek(slice_prefix);
-      return dbiter->status().ok() ? 0 : -1;
-    }
-    int seek_to_last() {
-      string limit = past_prefix(prefix);
-      leveldb::Slice slice_limit(limit);
-      dbiter->Seek(slice_limit);
-      
-      if (!dbiter->Valid()) {
-        dbiter->SeekToLast();
-      } else {
-        dbiter->Prev();
-      }
-      return dbiter->status().ok() ? 0 : -1;
-    }
-    int upper_bound(const string &after) {
-      lower_bound(after);
-      if (valid() && key() == after)
-	next();
-      return dbiter->status().ok() ? 0 : -1;
-    }
-    int lower_bound(const string &to) {
-      string bound = combine_strings(prefix, to);
-      leveldb::Slice slice_bound(bound);
-      dbiter->Seek(slice_bound);
-      return dbiter->status().ok() ? 0 : -1;
-    }
-    bool valid() {
-      return dbiter->Valid() && in_prefix(prefix, dbiter->key());
-    } 
-  };
-
-  class LevelDBReadOnlyIterator {
+  class LevelDBReadOnlyIteratorImpl : public LevelDBWholeSpaceIteratorImpl {
     leveldb::DB *db;
     const leveldb::Snapshot *snapshot;
   public:
-    LevelDBReadOnlyIterator(leveldb::DB *db, const leveldb::Snapshot *s) :
-      db(db), snapshot(s) { }
-    ~LevelDBReadOnlyIterator() {
+    LevelDBReadOnlyIteratorImpl(leveldb::DB *db, const leveldb::Snapshot *s,
+				leveldb::Iterator *iter) :
+      LevelDBWholeSpaceIteratorImpl(iter), db(db), snapshot(s) { }
+
+    ~LevelDBReadOnlyIteratorImpl() {
       assert(snapshot != NULL);
       db->ReleaseSnapshot(snapshot);
     }
   };
-
-  class LevelDBGenericROIteratorImpl : public LevelDBGenericIteratorImpl,
-				       public LevelDBReadOnlyIterator {
-  public:
-    LevelDBGenericROIteratorImpl(leveldb::DB *db, const leveldb::Snapshot *s,
-				 leveldb::Iterator *iter) :
-      LevelDBGenericIteratorImpl(iter), LevelDBReadOnlyIterator(db, s) { }
-  };
-
-  class LevelDBROIteratorImpl : public LevelDBIteratorImpl,
-				public LevelDBReadOnlyIterator {
-  public:
-    LevelDBROIteratorImpl(leveldb::DB *db, const leveldb::Snapshot *s,
-			  leveldb::Iterator *iter, const string &prefix) :
-      LevelDBIteratorImpl(iter, prefix), LevelDBReadOnlyIterator(db, s) { }
-  };
-
-  Iterator get_iterator(const string &prefix) {
-    return std::tr1::shared_ptr<LevelDBIteratorImpl>(
-      new LevelDBIteratorImpl(
-	db->NewIterator(leveldb::ReadOptions()),
-	prefix));
-  }
-
-  Iterator get_iterator() {
-    return std::tr1::shared_ptr<LevelDBGenericIteratorImpl>(
-      new LevelDBGenericIteratorImpl(
-        db->NewIterator(leveldb::ReadOptions())
-    ));
-  }
-
-  Iterator get_readonly_iterator() {
-    const leveldb::Snapshot *snapshot;
-    leveldb::ReadOptions options;
-
-    snapshot = db->GetSnapshot();
-    options.snapshot = snapshot;
-
-    return std::tr1::shared_ptr<LevelDBGenericROIteratorImpl>(
-      new LevelDBGenericROIteratorImpl(db.get(), snapshot,
-	db->NewIterator(options))
-    );
-  }
-
-  Iterator get_readonly_iterator(const string &prefix) {
-    const leveldb::Snapshot *snapshot;
-    leveldb::ReadOptions options;
-
-    snapshot = db->GetSnapshot();
-    options.snapshot = snapshot;
-
-    return std::tr1::shared_ptr<LevelDBROIteratorImpl>(
-      new LevelDBROIteratorImpl(db.get(), snapshot,
-	db->NewIterator(options), prefix)
-    );
-  }
 
   /// Utility
   static string combine_strings(const string &prefix, const string &value);
@@ -253,6 +179,29 @@ public:
     limit.push_back(1);
     return limit;
   }
+
+protected:
+  WholeSpaceIterator _get_iterator() {
+    return std::tr1::shared_ptr<KeyValueDB::WholeSpaceIteratorImpl>(
+      new LevelDBWholeSpaceIteratorImpl(
+	db->NewIterator(leveldb::ReadOptions())
+      )
+    );
+  }
+
+  WholeSpaceIterator _get_readonly_iterator() {
+    const leveldb::Snapshot *snapshot;
+    leveldb::ReadOptions options;
+
+    snapshot = db->GetSnapshot();
+    options.snapshot = snapshot;
+
+    return std::tr1::shared_ptr<KeyValueDB::WholeSpaceIteratorImpl>(
+      new LevelDBReadOnlyIteratorImpl(db.get(), snapshot,
+	db->NewIterator(options))
+    );
+  }
+
 };
 
 #endif
