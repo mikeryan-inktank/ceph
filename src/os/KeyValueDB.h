@@ -117,8 +117,10 @@ public:
       return generic_iter->lower_bound(prefix, to);
     }
     bool valid() {
+      if (!generic_iter->valid())
+	return false;
       pair<string,string> raw_key = generic_iter->raw_key();
-      return generic_iter->valid() && (raw_key.first == prefix);
+      return (raw_key.first == prefix);
     }
     int next() {
       if (valid())
