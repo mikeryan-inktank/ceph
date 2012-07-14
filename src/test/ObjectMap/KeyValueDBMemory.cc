@@ -22,6 +22,11 @@ public:
   virtual ~WholeSpaceMemIterator() { }
 
   int seek_to_first() {
+    db_iter = db->db.end();
+    std::cout << __func__ << " ready: " << ready
+	      << " db.size(): " << db->db.size()
+	      << " prefix: none" << std::endl;
+
     if (db->db.size() == 0) {
       ready = false;
       return 0;
@@ -33,10 +38,22 @@ public:
   }
 
   int seek_to_first(const string &prefix) {
-    if ((db->db.size() == 0) || (db->db.count(prefix) == 0)) {
+    db_iter = db->db.end();
+    std::cout << __func__ << " ready: " << ready
+	      << " db.size(): " << db->db.size()
+	      << " prefix: " << prefix << std::endl;
+
+    if (db->db.size() == 0) {
+      std::cout << __func__ << " db.size() is zero" << std::endl;
+      ready = false;
+      return 0;
+    } else if (db->db.count(prefix) == 0) {
+      std::cout << __func__ << " prefix " << prefix
+		<< " not found" << std::endl;
       ready = false;
       return 0;
     }
+
     db_iter = db->db.find(prefix);
     curr_iter = (*db_iter).second.begin();
     assert(curr_iter == db->db[prefix].begin());
@@ -44,18 +61,37 @@ public:
   }
 
   int seek_to_last() {
+    db_iter = db->db.end();
+    std::cout << __func__ << " ready: " << ready
+	      << " db.size(): " << db->db.size()
+	      << " prefix: none" << std::endl;
+
     if (db->db.size() == 0) {
       ready = false;
       return 0;
     }
     db_iter = --db->db.end();
+    assert(db_iter != db->db.end());
     curr_iter = --(*db_iter).second.end();
+    assert(curr_iter != (*db_iter).second.end());
     ready = true;
     return 0;
   }
 
   int seek_to_last(const string &prefix) {
-    if ((db->db.size() == 0) || (db->db.count(prefix) == 0)) {
+    db_iter = db->db.end();
+    db_iter = db->db.end();
+    std::cout << __func__ << " ready: " << ready
+	      << " db.size(): " << db->db.size()
+	      << " prefix: " << prefix << std::endl;
+
+    if (db->db.size() == 0) {
+      std::cout << __func__ << " db.size() is zero" << stD::endl;
+      ready = false;
+      return 0;
+    } else if (db->db.count(prefix) == 0) {
+      std::cout << __func__ << " prefix " << prefix
+		<< " not found" << std::endl;
       ready = false;
       return 0;
     }
@@ -70,6 +106,7 @@ public:
       return 0;
     }
     db_iter = db->db.find(prefix);
+    assert(db_iter != db->db.end());
     curr_iter = (*db_iter).second.lower_bound(to);
     ready = true;
     return 0;
@@ -81,12 +118,24 @@ public:
       return 0;
     }
     db_iter = db->db.find(prefix);
+    assert(db_iter != db->db.end());
     curr_iter = (*db_iter).second.upper_bound(after);
     ready = true;
     return 0;
   }
 
   bool valid() {
+    std::cout << __func__ << " ready: " << ready
+	      << " db.size(): " << db->db.size()
+	      << " db_iter( begin: " << (db_iter == db->db.begin())
+	      << " end: " << (db_iter == db->db.end()) << " )";
+    if (db_iter != db->db.end()) {
+      std::cout << " curr_iter( begin: "
+		<< (curr_iter == (*db_iter).second.begin())
+		<< " end: " << (curr_iter == (*db_iter).second.end())
+		<< " )";
+    std::cout << std::endl;
+
     return ready && (db_iter != db->db.end());
   }
 
@@ -96,8 +145,14 @@ public:
   }
 
   int prev() {
-    if (!valid())
+    if (begin()) {
+      std::cout << __func__ << " on-begin" << std::endl;
       return 0;
+    } else if (!ready) {
+      std::cout << __func__ << " not ready" << std::endl;
+    }
+//    if (!valid())
+//      return 0;
 
     if (db_iter == db->db.begin()) {
       if (curr_iter == (*db_iter).second.begin())
