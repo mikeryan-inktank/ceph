@@ -206,6 +206,64 @@ public:
     return 0;
   }
 
+private:
+  /**
+   * Adjust iterators if we hit a boundary during a 'next()' call
+   *
+   * When we are advancing the iterator, we may hit a map boundary. In
+   * this event, we must adjust our iterators to match the expected
+   * result.
+   *
+   * We will adjust the iterators if the curr_iter has reached the end of
+   * the current db_iter position; we must then move db_iter forward, and
+   * assign curr_iter to the first position of db_iter iif db_iter didn't
+   * reach the end of the db map.
+   *
+   * @returns true if we adjusted the iterators; false otherwise.
+   */
+  bool _next_adjust_iterators() {
+    if (curr_iter == (*db_iter).second.end()) {
+      ++db_iter;
+      if (db_iter == db->db.end())
+	return true;
+      curr_iter = (*db_iter).second.begin();
+      return true;
+    }
+    return false;
+  }
+  /**
+   * Adjust iterators if we hit a boundary during a 'prev()' call
+   *
+   * When we are call the 'prev()' function, the iterator may hit a map
+   * boundary. In this event, we must adjust our iterators to match the
+   * expected result.
+   *
+   * If the 'db_iter' is on the beginning of the db map, and the 'curr_iter'
+   * is on the beginning of the map on the 'db_iter' position, then we
+   * can't do anything, so we will just return.
+   *
+   * On the other hand, if 'db_iter' is not on the first position, but
+   * 'curr_iter' is on the first position of the map on 'db_iter's
+   * position, then we will have the go back to the previous 'db_iter' map
+   * and set the 'curr_iter' on the first valid position before the end
+   * of that map.
+   *
+   * Otherwise, we have nothing to adjust.
+   *
+   * @returns true if we adjusted the iterators; false otherwise.
+   */
+  bool _prev_adjust_iterators() {
+    if (db_iter == db->db.begin()) {
+      if (curr_iter == (*db_iter).second.begin())
+	return true;
+    } else if (curr_iter == (*db_iter).second.begin()) {
+      --db_iter;
+      curr_iter = --(*db_iter).second.end();
+      return true;
+    }
+    return false;
+  }
+
 };
 
 int KeyValueDBMemory::get(const string &prefix,
