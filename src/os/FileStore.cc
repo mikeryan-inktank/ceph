@@ -4476,7 +4476,7 @@ int FileStore::collection_list_range(coll_t c, hobject_t start, hobject_t end,
       break;
     }
 
-    while (ls->back() >= end) {
+    while (ls->size() > 0 && ls->back() >= end) {
       ls->pop_back();
       done = true;
     }
