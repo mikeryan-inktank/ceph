@@ -619,10 +619,10 @@ void ReplicatedPG::do_op(OpRequestRef op)
 		 CEPH_NOSNAP, m->get_pg().ps(),
 		 info.pgid.pool());
 
-  if (scrub_block_writes && m->may_write()) {
+  if (scrubber.block_writes && m->may_write()) {
     // classic (non chunk) scrubs block all writes
     // chunky scrubs only block writes to a range
-    if (!scrub_is_chunky || (head >= scrub_start && head < scrub_end)) {
+    if (!scrubber.is_chunky || (head >= scrubber.start && head < scrubber.end)) {
       dout(20) << __func__ << ": waiting for scrub" << dendl;
       waiting_for_active.push_back(op);
       op->mark_delayed();
@@ -1440,7 +1440,7 @@ void ReplicatedPG::snap_trimmer()
       unlock();
       return;
     }
-    if (!scrub_block_writes) {
+    if (!scrubber.block_writes) {
       dout(10) << "snap_trimmer posting" << dendl;
       snap_trimmer_machine.process_event(SnapTrim());
     }
@@ -3453,18 +3453,18 @@ void ReplicatedPG::op_applied(RepGather *repop)
     last_update_applied = repop->v;
 
     // chunky scrub
-    if (scrub_active && scrub_is_chunky) {
-      if (last_update_applied == scrub_subset_last_update) {
+    if (scrubber.active && scrubber.is_chunky) {
+      if (last_update_applied == scrubber.subset_last_update) {
         osd->scrub_wq.queue(this);
       }
 
     // classic scrub
-    } else if (last_update_applied == info.last_update && scrub_block_writes) {
+    } else if (last_update_applied == info.last_update && scrubber.block_writes) {
       dout(10) << "requeueing scrub for cleanup" << dendl;
-      finalizing_scrub = true;
+      scrubber.finalizing = true;
       scrub_gather_replica_maps();
-      ++scrub_waiting_on;
-      scrub_waiting_on_whom.insert(osd->whoami);
+      ++scrubber.waiting_on;
+      scrubber.waiting_on_whom.insert(osd->whoami);
       osd->scrub_wq.queue(this);
     }
   }
@@ -4341,10 +4341,10 @@ void ReplicatedPG::sub_op_modify_applied(RepModify *rm)
     assert(info.last_update >= m->version);
     assert(last_update_applied < m->version);
     last_update_applied = m->version;
-    if (active_rep_scrub) {
-      if (last_update_applied == active_rep_scrub->scrub_to) {
-	osd->rep_scrub_wq.queue(active_rep_scrub);
-	active_rep_scrub = 0;
+    if (scrubber.active_rep_scrub) {
+      if (last_update_applied == scrubber.active_rep_scrub->scrub_to) {
+	osd->rep_scrub_wq.queue(scrubber.active_rep_scrub);
+	scrubber.active_rep_scrub = 0;
       }
     }
   } else {
@@ -5372,7 +5372,7 @@ void ReplicatedPG::_applied_recovered_object(ObjectStore::Transaction *t, Object
   --active_pushes;
 
   // requeue an active chunky scrub waiting on recovery ops
-  if (active_pushes == 0 && is_chunky_scrub_active()) {
+  if (active_pushes == 0 && scrubber.is_chunky_scrub_active()) {
     osd->scrub_wq.queue(this);
   }
 
@@ -5390,9 +5390,9 @@ void ReplicatedPG::_applied_recovered_object_replica(ObjectStore::Transaction *t
 
   // requeue an active chunky scrub waiting on recovery ops
   if (active_pushes == 0 &&
-      active_rep_scrub && active_rep_scrub->is_chunky()) {
-    osd->rep_scrub_wq.queue(active_rep_scrub);
-    active_rep_scrub = 0;
+      scrubber.active_rep_scrub && scrubber.active_rep_scrub->is_chunky()) {
+    osd->rep_scrub_wq.queue(scrubber.active_rep_scrub);
+    scrubber.active_rep_scrub = 0;
   }
 
   unlock();
@@ -5790,7 +5790,7 @@ void ReplicatedPG::on_change()
   clear_scrub_reserved();
 
   // clear scrub state
-  if (scrub_block_writes) {
+  if (scrubber.block_writes) {
     scrub_clear_state();
   } else if (is_scrubbing()) {
     state_clear(PG_STATE_SCRUBBING);
@@ -6566,7 +6566,7 @@ void ReplicatedPG::_scrub(ScrubMap& scrubmap)
       if (p->second.attrs.count(SS_ATTR) == 0) {
 	osd->clog.error() << mode << " " << info.pgid << " " << soid
 			  << " no '" << SS_ATTR << "' attr";
-        ++scrub_errors;
+        ++scrubber.errors;
 	continue;
       }
       bufferlist bl;
@@ -6578,7 +6578,7 @@ void ReplicatedPG::_scrub(ScrubMap& scrubmap)
       if (head != hobject_t()) {
 	osd->clog.error() << mode << " " << info.pgid << " " << head
 			  << " missing clones";
-        ++scrub_errors;
+        ++scrubber.errors;
       }
       
       // what will be next?
@@ -6611,7 +6611,7 @@ void ReplicatedPG::_scrub(ScrubMap& scrubmap)
     if (p->second.attrs.count(OI_ATTR) == 0) {
       osd->clog.error() << mode << " " << info.pgid << " " << soid
 			<< " no '" << OI_ATTR << "' attr";
-      ++scrub_errors;
+      ++scrubber.errors;
       continue;
     }
     bufferlist bv;
@@ -6622,7 +6622,7 @@ void ReplicatedPG::_scrub(ScrubMap& scrubmap)
       osd->clog.error() << mode << " " << info.pgid << " " << soid
 			<< " on disk size (" << p->second.size
 			<< ") does not match object info size (" << oi.size << ")";
-      ++scrub_errors;
+      ++scrubber.errors;
     }
 
     dout(20) << mode << "  " << soid << " " << oi << dendl;
@@ -6637,7 +6637,7 @@ void ReplicatedPG::_scrub(ScrubMap& scrubmap)
       if (!snapset.head_exists) {
 	osd->clog.error() << mode << " " << info.pgid << " " << soid
 			  << " snapset.head_exists=false, but object exists";
-        ++scrub_errors;
+        ++scrubber.errors;
 	continue;
       }
     } else if (soid.snap) {
@@ -6649,7 +6649,7 @@ void ReplicatedPG::_scrub(ScrubMap& scrubmap)
       if (soid.snap != *curclone) {
 	osd->clog.error() << mode << " " << info.pgid << " " << soid
 			  << " expected clone " << *curclone;
-        ++scrub_errors;
+        ++scrubber.errors;
 	assert(soid.snap == *curclone);
       }
 
@@ -6700,7 +6700,7 @@ void ReplicatedPG::_scrub_finish()
 		      << scrub_cstat.sum.num_objects << "/" << info.stats.stats.sum.num_objects << " objects, "
 		      << scrub_cstat.sum.num_object_clones << "/" << info.stats.stats.sum.num_object_clones << " clones, "
 		      << scrub_cstat.sum.num_bytes << "/" << info.stats.stats.sum.num_bytes << " bytes.\n";
-    ++scrub_errors;
+    ++scrubber.errors;
 
     if (repair) {
       info.stats.stats = scrub_cstat;
@@ -6755,7 +6755,7 @@ boost::statechart::result ReplicatedPG::NotTrimming::react(const SnapTrim&)
   } else if (!pg->is_primary() || !pg->is_active() || !pg->is_clean()) {
     dout(10) << "NotTrimming not primary, active, clean" << dendl;
     return discard_event();
-  } else if (pg->scrub_block_writes) {
+  } else if (pg->scrubber.block_writes) {
     dout(10) << "NotTrimming finalizing scrub" << dendl;
     pg->queue_snap_trim();
     return discard_event();
