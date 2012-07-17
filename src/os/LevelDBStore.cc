@@ -46,6 +46,8 @@ void LevelDBStore::LevelDBTransactionImpl::rmkey(const string &prefix,
 {
   string key = combine_strings(prefix, k);
   keys.push_back(key);
+	std::cout << __func__ << " prefix: " << prefix << " k: " << k
+						<< " key: " << key << std::endl;
   bat.Delete(leveldb::Slice(*(keys.rbegin())));
 }
 
@@ -57,6 +59,8 @@ void LevelDBStore::LevelDBTransactionImpl::rmkeys_by_prefix(const string &prefix
        it->next()) {
     string key = combine_strings(prefix, it->key());
     keys.push_back(key);
+		std::cout << __func__ << " prefix: " << prefix
+						  << " key: " << key << std::endl;
     bat.Delete(*(keys.rbegin()));
   }
 }
