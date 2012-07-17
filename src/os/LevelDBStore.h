@@ -111,7 +111,7 @@ public:
     }
     int upper_bound(const string &prefix, const string &after) {
       lower_bound(prefix, after);
-      if (valid() && dbiter->key() == after)
+      if (valid() && key() == after)
 	next();
       return dbiter->status().ok() ? 0 : -1;
     }
