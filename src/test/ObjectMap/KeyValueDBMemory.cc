@@ -9,6 +9,17 @@
 
 using namespace std;
 
+#if 0
+#define KVMEMOUT std::cout << "kvmem::"
+#define _KVMEMOUT std::cout
+#define KVMEMENDL std::endl
+#else
+#include <sstream>
+#define KVMEMOUT do { ostringstream _os; _os
+#define _KVMEMOUT _os
+#define KVMEMENDL "\n"; } while(0)
+#endif
+
 class WholeSpaceMemIterator : public KeyValueDB::WholeSpaceIteratorImpl {
 protected:
   KeyValueDBMemory *db;
@@ -23,9 +34,9 @@ public:
 
   int seek_to_first() {
     db_iter = db->db.end();
-    std::cout << __func__ << " ready: " << ready
+    KVMEMOUT << __func__ << " ready: " << ready
 	      << " db.size(): " << db->db.size()
-	      << " prefix: none" << std::endl;
+	      << " prefix: none" << KVMEMENDL;
 
     if (db->db.size() == 0) {
       ready = false;
@@ -39,17 +50,17 @@ public:
 
   int seek_to_first(const string &prefix) {
     db_iter = db->db.end();
-    std::cout << __func__ << " ready: " << ready
+    KVMEMOUT << __func__ << " ready: " << ready
 	      << " db.size(): " << db->db.size()
-	      << " prefix: " << prefix << std::endl;
+	      << " prefix: " << prefix << KVMEMENDL;
 
     if (db->db.size() == 0) {
-      std::cout << __func__ << " db.size() is zero" << std::endl;
+      KVMEMOUT << __func__ << " db.size() is zero" << KVMEMENDL;
       ready = false;
       return 0;
     } else if (db->db.count(prefix) == 0) {
-      std::cout << __func__ << " prefix " << prefix
-		<< " not found" << std::endl;
+      KVMEMOUT << __func__ << " prefix " << prefix
+		<< " not found" << KVMEMENDL;
       ready = false;
       return 0;
     }
@@ -63,9 +74,9 @@ public:
 
   int seek_to_last() {
     db_iter = db->db.end();
-    std::cout << __func__ << " ready: " << ready
+    KVMEMOUT << __func__ << " ready: " << ready
 	      << " db.size(): " << db->db.size()
-	      << " prefix: none" << std::endl;
+	      << " prefix: none" << KVMEMENDL;
 
     if (db->db.size() == 0) {
       ready = false;
@@ -81,17 +92,17 @@ public:
 
   int seek_to_last(const string &prefix) {
     db_iter = db->db.end();
-    std::cout << __func__ << " ready: " << ready
+    KVMEMOUT << __func__ << " ready: " << ready
 	      << " db.size(): " << db->db.size()
-	      << " prefix: " << prefix << std::endl;
+	      << " prefix: " << prefix << KVMEMENDL;
 
     if (db->db.size() == 0) {
-      std::cout << __func__ << " db.size() is zero" << stD::endl;
+      KVMEMOUT << __func__ << " db.size() is zero" << KVMEMENDL;
       ready = false;
       return 0;
     } else if (db->db.count(prefix) == 0) {
-      std::cout << __func__ << " prefix " << prefix
-		<< " not found" << std::endl;
+      KVMEMOUT << __func__ << " prefix " << prefix
+		<< " not found" << KVMEMENDL;
       ready = false;
       return 0;
     }
@@ -128,16 +139,17 @@ public:
   }
 
   bool valid() {
-    std::cout << __func__ << " ready: " << ready
+    KVMEMOUT << __func__ << " ready: " << ready
 	      << " db.size(): " << db->db.size()
 	      << " db_iter( begin: " << (db_iter == db->db.begin())
 	      << " end: " << (db_iter == db->db.end()) << " )";
     if (db_iter != db->db.end()) {
-      std::cout << " curr_iter( begin: "
+      _KVMEMOUT << " curr_iter( begin: "
 		<< (curr_iter == (*db_iter).second.begin())
 		<< " end: " << (curr_iter == (*db_iter).second.end())
 		<< " )";
-    std::cout << std::endl;
+    }
+    _KVMEMOUT << KVMEMENDL;
 
     return ready && (db_iter != db->db.end())
       && (curr_iter != (*db_iter).second.end());
@@ -149,28 +161,32 @@ public:
   }
 
   int prev() {
+    KVMEMOUT << __func__ << KVMEMENDL;
     if (begin()) {
-      std::cout << __func__ << " on-begin" << std::endl;
+      KVMEMOUT << __func__ << " on-begin" << KVMEMENDL;
       return 0;
     } else if (!ready) {
-      std::cout << __func__ << " not ready" << std::endl;
+      KVMEMOUT << __func__ << " not ready" << KVMEMENDL;
     }
 
     if (_prev_adjust_iterators()) {
+      KVMEMOUT << __func__ << " adjusted iterators; return" << KVMEMENDL;
       return 0;
     }
-
     --curr_iter;
     _prev_adjust_iterators();
     return 0;
   }
 
   int next() {
+    KVMEMOUT << __func__ << KVMEMENDL;
     if (!valid()) {
+      KVMEMOUT << __func__ << " not-valid; return" << KVMEMENDL;
       return 0;
     }
 
     if (_next_adjust_iterators()) {
+      KVMEMOUT << __func__ << " adjusted iterators; return" << KVMEMENDL;
       return 0;
     }
     ++curr_iter;
@@ -220,9 +236,13 @@ private:
    */
   bool _next_adjust_iterators() {
     if (curr_iter == (*db_iter).second.end()) {
+      KVMEMOUT << __func__ << " advance db_iter" << KVMEMENDL;
       ++db_iter;
-      if (db_iter == db->db.end())
+      if (db_iter == db->db.end()) {
+	KVMEMOUT << __func__ << " db_iter reached end" << KVMEMENDL;
 	return true;
+      }
+      KVMEMOUT << __func__ << " assign curr_iter" << KVMEMENDL;
       curr_iter = (*db_iter).second.begin();
       assert(curr_iter != (*db_iter).second.end());
       return true;
@@ -251,11 +271,22 @@ private:
    * @returns true if we adjusted the iterators; false otherwise.
    */
   bool _prev_adjust_iterators() {
+    valid();
     if (db_iter == db->db.begin()) {
-      if (curr_iter == (*db_iter).second.begin())
+      KVMEMOUT << __func__ << " db_iter is in the beginning" << KVMEMENDL;
+      if (curr_iter == (*db_iter).second.begin()) {
+	KVMEMOUT << __func__ << " curr_iter is in the beginning" << KVMEMENDL;
 	return true;
+      }
     } else if (curr_iter == (*db_iter).second.begin()) {
+      valid();
+      KVMEMOUT << __func__ << " decrement db_iter" << KVMEMENDL;
       --db_iter;
+      valid();
+      KVMEMOUT << __func__ << " db_iter( key: " << (*db_iter).first
+	       << "; #values: " << (*db_iter).second.size() << " )"
+	       << KVMEMENDL;
+      KVMEMOUT << __func__ << " adjust curr_iter" << KVMEMENDL;
       if ((*db_iter).second.size() > 0)
 	curr_iter = --(*db_iter).second.end();
       return true;
