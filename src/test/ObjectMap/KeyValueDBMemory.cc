@@ -271,6 +271,9 @@ int KeyValueDBMemory::set(const string &prefix,
 int KeyValueDBMemory::rmkey(const string &prefix,
 			    const string &key) {
   db[prefix].erase(key);
+  if (db[prefix].size() == 0)
+    db.erase(prefix);
+
   return 0;
 }
 
