@@ -57,6 +57,7 @@ public:
     db_iter = db->db.find(prefix);
     curr_iter = (*db_iter).second.begin();
     assert(curr_iter == db->db[prefix].begin());
+    ready = true;
     return 0;
   }
 
@@ -80,7 +81,6 @@ public:
 
   int seek_to_last(const string &prefix) {
     db_iter = db->db.end();
-    db_iter = db->db.end();
     std::cout << __func__ << " ready: " << ready
 	      << " db.size(): " << db->db.size()
 	      << " prefix: " << prefix << std::endl;
@@ -97,10 +97,12 @@ public:
     }
     db_iter = db->db.find(prefix);
     curr_iter = --(*db_iter).second.end();
+    ready = true;
     return 0;
   }
 
   int lower_bound(const string &prefix, const string &to) {
+    db_iter = db->db.end();
     if ((db->db.size() == 0) || (db->db.count(prefix) == 0)) {
       ready = false;
       return 0;
@@ -113,6 +115,7 @@ public:
   }
 
   int upper_bound(const string &prefix, const string &after) {
+    db_iter = db->db.end();
     if ((db->db.size() == 0) || (db->db.count(prefix) == 0)) {
       ready = false;
       return 0;
@@ -136,7 +139,8 @@ public:
 		<< " )";
     std::cout << std::endl;
 
-    return ready && (db_iter != db->db.end());
+    return ready && (db_iter != db->db.end())
+      && (curr_iter != (*db_iter).second.end());
   }
 
   bool begin() {
@@ -151,33 +155,26 @@ public:
     } else if (!ready) {
       std::cout << __func__ << " not ready" << std::endl;
     }
-//    if (!valid())
-//      return 0;
 
-    if (db_iter == db->db.begin()) {
-      if (curr_iter == (*db_iter).second.begin())
-	return 0;
-    } else if (curr_iter == (*db_iter).second.begin()) {
-      --db_iter;
-      curr_iter = --(*db_iter).second.end();
+    if (_prev_adjust_iterators()) {
       return 0;
     }
 
     --curr_iter;
+    _prev_adjust_iterators();
     return 0;
   }
 
   int next() {
-    if (!valid() || (db_iter == db->db.end()))
+    if (!valid()) {
       return 0;
-    if (curr_iter == (*db_iter).second.end()) {
-      ++db_iter;
-      if (db_iter == db->db.end())
-	return 0;
-      curr_iter = (*db_iter).second.begin();
+    }
+
+    if (_next_adjust_iterators()) {
       return 0;
     }
     ++curr_iter;
+    _next_adjust_iterators();
     return 0;
   }
 
@@ -227,6 +224,7 @@ private:
       if (db_iter == db->db.end())
 	return true;
       curr_iter = (*db_iter).second.begin();
+      assert(curr_iter != (*db_iter).second.end());
       return true;
     }
     return false;
@@ -258,7 +256,8 @@ private:
 	return true;
     } else if (curr_iter == (*db_iter).second.begin()) {
       --db_iter;
-      curr_iter = --(*db_iter).second.end();
+      if ((*db_iter).second.size() > 0)
+	curr_iter = --(*db_iter).second.end();
       return true;
     }
     return false;
