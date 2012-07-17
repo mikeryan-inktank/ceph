@@ -12,6 +12,18 @@
 #include "ObjectMap.h"
 
 using std::string;
+
+#if 1
+#define OUT std::cout << "kv::" << __func__
+#define COUT std::cout
+#define ENDL std::endl
+#else
+#define OUT do { ostringstream _os; _os
+#define COUT do { ostringstream _os; _os
+#define ENDL "\n"; } while(0)
+#endif
+
+
 /**
  * Defines virtual interface to be implemented by key value store
  *
@@ -105,41 +117,85 @@ public:
     virtual ~IteratorImpl() { }
 
     int seek_to_first() {
-      return generic_iter->seek_to_first(prefix);
+      OUT << " prefix " << prefix << ENDL;
+      int r = generic_iter->seek_to_first(prefix);
+      OUT << " ret " << r << ENDL;
+      return r;
     }
     int seek_to_last() {
-      return generic_iter->seek_to_last(prefix);
+      OUT << " prefix " << prefix << ENDL;
+      int r = generic_iter->seek_to_last(prefix);
+      OUT << " ret " << r << ENDL;
+      return r;
     }
     int upper_bound(const string &after) {
-      return generic_iter->upper_bound(prefix, after);
+      OUT << " prefix " << prefix << " after " << after << ENDL;
+      int r = generic_iter->upper_bound(prefix, after);
+      OUT << " ret " << r << ENDL;
+      return r;
     }
     int lower_bound(const string &to) {
-      return generic_iter->lower_bound(prefix, to);
+      OUT << " prefix " << prefix << " to " << to << ENDL;
+      int r = generic_iter->lower_bound(prefix, to);
+      OUT << " ret " << r << ENDL;
+      return r;
     }
     bool valid() {
-      if (!generic_iter->valid())
-	return false;
-      pair<string,string> raw_key = generic_iter->raw_key();
-      return (raw_key.first == prefix);
+      OUT << ENDL;
+      bool r;
+      if (!generic_iter->valid()) {
+	OUT << " whole-space not valid" << ENDL;
+	r = false;
+      } else {
+	pair<string,string> raw_key = generic_iter->raw_key();
+	r = (raw_key.first == prefix);
+	OUT << " raw_key(" << raw_key.first << "," << raw_key.second
+	    << ") prefix " << prefix << " ret " << r << ENDL;
+      }
+      return r;
     }
     int next() {
-      if (valid())
-	return generic_iter->next();
-      return status();
+      OUT << ENDL;
+      int r;
+      if (valid()) {
+	r = generic_iter->next();
+	OUT << " ret " << r << " (valid)" << ENDL;
+      } else {
+	r = status();
+	OUT << " ret " << r << " (invalid - from status)" << ENDL;
+      }
+      return r;
     }
     int prev() {
-      if (valid())
-	return generic_iter->prev();
-      return status();
+      OUT << ENDL;
+      int r;
+      if (valid()) {
+	r = generic_iter->prev();
+	OUT << " ret " << r << " (valid)" << ENDL;
+      } else {
+	r = status();
+	OUT << " ret " << r << " (invalid - from status)" << ENDL;
+      }
+      return r;
     }
     string key() {
-      return generic_iter->key();
+      string r = generic_iter->key();
+      OUT << " ret " << r << ENDL;
+      return r;
     }
     bufferlist value() {
-      return generic_iter->value();
+      bufferlist bl = generic_iter->value();
+      ostringstream os;
+      bl.hexdump(os);
+      string hex = os.str();
+      OUT << " bytes " << bl.length() << ENDL;
+      COUT << hex << ENDL;
+      return bl;
     }
     int status() {
-      return generic_iter->status();
+      int r = generic_iter->status();
+      OUT << " ret " << r << ENDL;
+      return r;
     }
   };
 
@@ -150,6 +206,7 @@ public:
   }
 
   Iterator get_iterator(const string &prefix) {
+    OUT << __func__ << " prefix " << prefix << ENDL;
     return std::tr1::shared_ptr<IteratorImpl>(
       new IteratorImpl(prefix, get_iterator())
     );
