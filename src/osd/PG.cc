@@ -2630,9 +2630,21 @@ void PG::sub_op_scrub_map(OpRequestRef op)
     scrub_received_maps[from].decode(p, info.pgid.pool());
   }
 
-  if (--scrub_waiting_on == 0) {
-    assert(last_update_applied == info.last_update);
-    osd->scrub_finalize_wq.queue(this);
+  --scrub_waiting_on;
+  scrub_waiting_on_whom.erase(from);
+  if (scrub_waiting_on == 0) {
+    if (finalizing_scrub) { // incremental lists received
+      osd->scrub_finalize_wq.queue(this);
+    } else {                // initial lists received
+      scrub_block_writes = true;
+      if (last_update_applied == info.last_update) {
+        finalizing_scrub = true;
+        scrub_gather_replica_maps();
+        ++scrub_waiting_on;
+        scrub_waiting_on_whom.insert(osd->whoami);
+        osd->scrub_wq.queue(this);
+      }
+    }
   }
 }
 
@@ -2965,8 +2977,9 @@ void PG::replica_scrub(MOSDRepScrub *msg)
  * PG_STATE_SCRUBBING is set when the scrub is queued
  * 
  * Once the initial scrub has completed and the requests have gone out to 
- * replicas for maps, finalizing_scrub is set.  scrub_waiting_on is set to 
- * the number of maps outstanding (active.size()).
+ * replicas for maps, we set scrub_active and wait for the replicas to
+ * complete their maps. Once the maps are received, scrub_block_writes is set.
+ * scrub_waiting_on is set to the number of maps outstanding (active.size()).
  *
  * If last_update_applied is behind the head of the log, scrub returns to be
  * requeued by op_applied.
@@ -2998,8 +3011,10 @@ void PG::scrub()
     return;
   }
 
-  if (!finalizing_scrub) {
+  if (!scrub_active) {
     dout(10) << "scrub start" << dendl;
+    scrub_active = true;
+
     update_stats();
     scrub_received_maps.clear();
     scrub_epoch_start = info.history.same_interval_since;
@@ -3019,6 +3034,7 @@ void PG::scrub()
      * last_update_applied == info.last_update)
      */
     scrub_waiting_on = acting.size();
+    scrub_waiting_on_whom.insert(acting.begin(), acting.end());
 
     // request maps from replicas
     for (unsigned i=1; i<acting.size(); i++) {
@@ -3037,18 +3053,37 @@ void PG::scrub()
       return;
     }
 
-    finalizing_scrub = true;
+    --scrub_waiting_on;
+    scrub_waiting_on_whom.erase(osd->whoami);
+
+    if (scrub_waiting_on == 0) {
+      // the replicas have completed their scrub map, so lock out writes
+      scrub_block_writes = true;
+    } else {
+      dout(10) << "wait for replicas to build initial scrub map" << dendl;
+      unlock();
+      return;
+    }
+
     if (last_update_applied != info.last_update) {
       dout(10) << "wait for cleanup" << dendl;
       unlock();
       return;
     }
+
+    // fall through if last_update_applied == info.last_update and scrub_waiting_on == 0
+
+    // request incrementals from replicas
+    scrub_gather_replica_maps();
+    ++scrub_waiting_on;
+    scrub_waiting_on_whom.insert(osd->whoami);
   }
     
-
   dout(10) << "clean up scrub" << dendl;
   assert(last_update_applied == info.last_update);
-  
+
+  finalizing_scrub = true;
+
   if (scrub_epoch_start != info.history.same_interval_since) {
     dout(10) << "scrub  pg changed, aborting" << dendl;
     scrub_clear_state();
@@ -3064,6 +3099,7 @@ void PG::scrub()
   }
   
   --scrub_waiting_on;
+  scrub_waiting_on_whom.erase(osd->whoami);
   if (scrub_waiting_on == 0) {
     assert(last_update_applied == info.last_update);
     osd->scrub_finalize_wq.queue(this);
@@ -3085,6 +3121,10 @@ void PG::scrub_clear_state()
   osd->requeue_ops(this, waiting_for_active);
 
   finalizing_scrub = false;
+  scrub_block_writes = false;
+  scrub_active = false;
+  scrub_waiting_on = 0;
+  scrub_waiting_on_whom.clear();
   if (active_rep_scrub) {
     active_rep_scrub->put();
     active_rep_scrub = NULL;
@@ -3102,6 +3142,7 @@ bool PG::scrub_gather_replica_maps() {
     
     if (scrub_received_maps[p->first].valid_through != log.head) {
       scrub_waiting_on++;
+      scrub_waiting_on_whom.insert(p->first);
       // Need to request another incremental map
       _request_scrub_map(p->first, p->second.valid_through);
     }
@@ -4278,6 +4319,25 @@ boost::statechart::result PG::RecoveryState::Active::react(const QueryState& q)
     q.f->close_section();
   }
 
+  {
+    q.f->open_object_section("scrub");
+    q.f->dump_stream("scrub_epoch_start") << pg->scrub_epoch_start;
+    q.f->dump_int("scrub_active", pg->scrub_active);
+    q.f->dump_int("scrub_block_writes", pg->scrub_block_writes);
+    q.f->dump_int("finalizing_scrub", pg->finalizing_scrub);
+    q.f->dump_int("scrub_waiting_on", pg->scrub_waiting_on);
+    {
+      q.f->open_array_section("scrub_waiting_on_whom");
+      for (set<int>::iterator p = pg->scrub_waiting_on_whom.begin();
+	   p != pg->scrub_waiting_on_whom.end();
+	   ++p) {
+	q.f->dump_int("osd", *p);
+      }
+      q.f->close_section();
+    }
+    q.f->close_section();
+  }
+
   q.f->close_section();
   return forward_event();
 }
@@ -4357,9 +4417,12 @@ boost::statechart::result PG::RecoveryState::ReplicaActive::react(const MQuery& 
 
 boost::statechart::result PG::RecoveryState::ReplicaActive::react(const QueryState& q)
 {
+  PG *pg = context< RecoveryMachine >().pg;
+
   q.f->open_object_section("state");
   q.f->dump_string("name", state_name);
   q.f->dump_stream("enter_time") << enter_time;
+  q.f->dump_int("finalizing_scrub", pg->finalizing_scrub);
   q.f->close_section();
   return forward_event();
 }
@@ -4389,7 +4452,11 @@ boost::statechart::result PG::RecoveryState::Stray::react(const MLogRec& logevt)
 
   if (msg->info.last_backfill == hobject_t()) {
     // restart backfill
+    pg->osd->unreg_last_pg_scrub(pg->info.pgid,
+				 pg->info.history.last_scrub_stamp);
     pg->info = msg->info;
+    pg->osd->reg_last_pg_scrub(pg->info.pgid,
+			       pg->info.history.last_scrub_stamp);
     pg->log.claim_log(msg->log);
     pg->missing.clear();
   } else {
