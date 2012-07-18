@@ -1,4 +1,5 @@
 // -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
+// vim: ts=8 sw=2 smarttab
 #include <map>
 #include <set>
 #include <string>
@@ -13,6 +14,10 @@ using std::string;
 class KeyValueDBMemory : public KeyValueDB {
 public:
   std::map<string, std::map<string, bufferlist> > db;
+
+  KeyValueDBMemory() { }
+  KeyValueDBMemory(KeyValueDBMemory *db) : db(db->db) { }
+  virtual ~KeyValueDBMemory() { }
 
   int get(
     const string &prefix,
@@ -146,6 +151,9 @@ public:
     return static_cast<TransactionImpl_*>(trans.get())->complete();
   }
 
-  friend class MemIterator;
-  Iterator get_iterator(const string &prefix);
+  friend class WholeSpaceMemIterator;
+
+protected:
+  WholeSpaceIterator _get_iterator();
+  WholeSpaceIterator _get_snapshot_iterator();
 };
