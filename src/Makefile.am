@@ -145,7 +145,9 @@ librados_config_SOURCES = librados-config.cc
 librados_config_LDADD = libglobal.la librados.la $(EXTRALIBS) $(CRYPTO_LIBS)
 bin_PROGRAMS += librados-config
 
-mon_store_tool_SOURCES = test/cli/mon-store-tool/mon-store-tool.cc os/LevelDBStore.cc
+mon_store_tool_SOURCES = test/cli/mon-store-tool/mon-store-tool.cc \
+                         os/LevelDBStore.cc \
+                         test/ObjectMap/KeyValueDBMemory.cc
 mon_store_tool_LDFLAGS = ${AM_LDFLAGS}
 mon_store_tool_LDADD =  ${UNITTEST_STATIC_LDADD} $(LIBOS_LDA) $(LIBGLOBAL_LDA)
 mon_store_tool_CXXFLAGS = ${AM_CXXFLAGS} ${UNITTEST_CXXFLAGS} \
