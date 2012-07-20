@@ -2253,10 +2253,13 @@ int flatten(ImageCtx *ictx, ProgressContext &prog_ctx)
 			       get_block_num(ictx->parent->order, ofs),
 			       ictx->parent->old_format);
     // if parent block doesn't exist, just skip over all/part of it.
-    if ((r = p_ioctx.stat(oid, NULL, NULL)) < 0) {
+    if ((r = p_ioctx.stat(oid, NULL, NULL)) == -ENOENT) {
       size_t pblksize = get_block_size(ictx->parent->order);
       ofs += pblksize - (ofs % pblksize);
       continue;
+    } else if (r < 0) {
+      // some other stat error
+      goto err;
     }
     // must read from parent
     if ((r = read(ictx->parent, ofs, cblksize, buf)) < 0)
