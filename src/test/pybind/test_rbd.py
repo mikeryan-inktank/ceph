@@ -390,3 +390,34 @@ class TestImage(object):
 
         RBD().remove(ioctx, 'clone')
         self.image.remove_snap('snap1')
+
+    def test_clone_flatten(self):
+        global ioctx
+        if features is None or (features & RBD_FEATURE_LAYERING) == 0:
+            return 0
+        self.image.create_snap('snap1')
+        RBD().clone(ioctx, IMG_NAME, 'snap1', ioctx, 'clone', features)
+
+        # test that we can't flatten a non-clone
+        with Image(ioctx, IMG_NAME, 'snap1') as snap1:
+            assert_raises(InvalidArgument, self.image.flatten)
+
+        # but that we can flatten a clone...all of it
+        with Image(ioctx, 'clone') as clone:
+            eq(clone.flatten(), clone.overlap())
+            info = clone.stat()
+            eq(clone.overlap(), info['size'])
+
+        RBD().remove(ioctx, 'clone')
+        RBD().clone(ioctx, IMG_NAME, 'snap1', ioctx, 'clone', features)
+
+        # resize down/up such that overlap is not the whole size
+        with Image(ioctx, 'clone') as clone:
+            clone.resize(IMG_SIZE / 2)
+            clone.resize(IMG_SIZE * 2)
+            info = clone.stat()
+            # flatten should flatten only the overlapping size
+            eq(clone.flatten(), clone.overlap())
+
+        RBD().remove(ioctx, 'clone')
+        self.image.remove_snap('snap1')
