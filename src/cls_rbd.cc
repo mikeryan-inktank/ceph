@@ -1138,10 +1138,10 @@ int get_all_features(cls_method_context_t hctx, bufferlist *in, bufferlist *out)
 /**
  * "Copy up" data from the parent of a clone to the clone's object(s).
  * Used for implementing copy-on-write for a clone image.  Client
- * will pass down a chunk of data that fits completely within on
+ * will pass down a chunk of data that fits completely within one
  * clone block (one object), and is aligned (starts at beginning of block),
  * but may be shorter (for non-full parent blocks).  The class method
- * can't know the object size to validate the requested length, '
+ * can't know the object size to validate the requested length,
  * so it just writes the data as given if the child object doesn't
  * already exist, and returns success if it does.
  *
