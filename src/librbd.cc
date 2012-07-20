@@ -2245,7 +2245,10 @@ int flatten(ImageCtx *ictx, ProgressContext &prog_ctx)
 
   uint64_t cblksize = get_block_size(ictx->order);
   char *buf = new char[cblksize];
-  for (size_t ofs = 0; ofs < ictx->parent_md.overlap; ofs += cblksize) {
+
+  // loop mostly increments in cblksize but may also skip forward pblksize 
+  size_t ofs = 0;
+  while (ofs < ictx->parent_md.overlap) {
     prog_ctx.update_progress(ofs, ictx->parent_md.overlap);
     // check for nonexistent parent blocks
     IoCtx p_ioctx = ictx->parent->data_ctx;
@@ -2255,6 +2258,8 @@ int flatten(ImageCtx *ictx, ProgressContext &prog_ctx)
     // if parent block doesn't exist, just skip over all/part of it.
     if ((r = p_ioctx.stat(oid, NULL, NULL)) == -ENOENT) {
       size_t pblksize = get_block_size(ictx->parent->order);
+      // ofs % pblksize is partial parent block
+      // pblksize - (ofs % pblksize) is remainder.  Skip remainder.
       ofs += pblksize - (ofs % pblksize);
       continue;
     } else if (r < 0) {
@@ -2271,6 +2276,7 @@ int flatten(ImageCtx *ictx, ProgressContext &prog_ctx)
 	goto err;
       }
     }
+    ofs += cblksize;
   }
   r = 0;
 err:
