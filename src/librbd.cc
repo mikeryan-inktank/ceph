@@ -724,7 +724,6 @@ namespace librbd {
 
   int copyup_block(ImageCtx *ictx, uint64_t offset, size_t len,
 		   const char *buf);
-  int copyup_cb(uint64_t offset, size_t len, const char *buf, void *arg);
   int flatten(ImageCtx *ictx, ProgressContext &prog_ctx);
 
   /* cooperative locking */
@@ -2200,10 +2199,6 @@ int copyup_block(ImageCtx *ictx, uint64_t offset, size_t len, const char *buf)
   if ((len > blksize) || (get_block_ofs(ictx->order, offset) != 0))
     return -EINVAL;
 
-  // handle sparse-read callback
-  if (buf == NULL)
-    return 0;
-
   bufferlist bl;
   ictx->lock.Lock();
   string oid = get_block_oid(ictx->object_prefix, 
@@ -2214,25 +2209,70 @@ int copyup_block(ImageCtx *ictx, uint64_t offset, size_t len, const char *buf)
   return cls_client::copyup(&ictx->data_ctx, oid, bl);
 }
 
-int copyup_cb(uint64_t offset, size_t len, const char *buf, void *arg)
+// test if an entire buf is zero in 8-byte chunks
+static bool buf_is_zero(char *buf, size_t len)
 {
-  CopyupProgressContext *copyup_pctx = (CopyupProgressContext *)arg;
-  copyup_pctx->prog_ctx.update_progress(offset,
-                                    copyup_pctx->clone_ictx->get_image_size());
-  return copyup_block(copyup_pctx->clone_ictx, offset, len, buf);
+  size_t ofs;
+  int chunk = sizeof(uint64_t);
+
+  for (ofs = 0; ofs < len; ofs += sizeof(uint64_t)) {
+    if (*(uint64_t *)(buf + ofs) != 0) {
+      return false;
+    }
+  }
+  for (ofs = (len / chunk) * chunk; ofs < len; ofs++) {
+    if (buf[ofs] != '\0') {
+      return false;
+    }
+  }
+  return true;
 }
 
 // 'flatten' child image by copying all parent's blocks
 int flatten(ImageCtx *ictx, ProgressContext &prog_ctx)
 {
+  int r;
+  // ictx_check also updates parent data
+  if ((r = ictx_check(ictx)) < 0)
+    return r;
+
   // can't flatten a non-clone
   if (ictx->parent_md.pool_id == -1)
     return -EINVAL;
 
   assert(ictx->parent != NULL);
-  CopyupProgressContext copyup_pctx(ictx, prog_ctx);
-  return read_iterate(ictx->parent, 0, ictx->parent_md.overlap, copyup_cb,
-		      (void *)&copyup_pctx);
+  assert(ictx->parent_md.overlap <= ictx->size);
+
+  uint64_t cblksize = get_block_size(ictx->order);
+  char *buf = new char[cblksize];
+  for (size_t ofs = 0; ofs < ictx->parent_md.overlap; ofs += cblksize) {
+    prog_ctx.update_progress(ofs, ictx->parent_md.overlap);
+    // check for nonexistent parent blocks
+    IoCtx p_ioctx = ictx->parent->data_ctx;
+    string oid = get_block_oid(ictx->parent->object_prefix,
+			       get_block_num(ictx->parent->order, ofs),
+			       ictx->parent->old_format);
+    // if parent block doesn't exist, just skip over all/part of it.
+    if ((r = p_ioctx.stat(oid, NULL, NULL)) < 0) {
+      size_t pblksize = get_block_size(ictx->parent->order);
+      ofs += pblksize - (ofs % pblksize);
+      continue;
+    }
+    // must read from parent
+    if ((r = read(ictx->parent, ofs, cblksize, buf)) < 0)
+      goto err;
+
+    // for actual amount read, if data is all zero, don't bother with block
+    if (!buf_is_zero(buf, r)) {
+      if ((r = copyup_block(ictx, ofs, r, buf)) < 0) {
+	goto err;
+      }
+    }
+  }
+  r = 0;
+err:
+  delete buf;
+  return r;
 }
 
 int list_locks(ImageCtx *ictx,
