@@ -222,3 +222,19 @@ KeyValueDB::WholeSpaceIterator KeyValueDBMemory::_get_iterator() {
     new WholeSpaceMemIterator(this)
   );
 }
+
+class WholeSpaceSnapshotMemIterator : public WholeSpaceMemIterator {
+public:
+  WholeSpaceSnapshotMemIterator(KeyValueDBMemory *db) :
+    WholeSpaceMemIterator(db) { }
+  ~WholeSpaceSnapshotMemIterator() {
+    delete db;
+  }
+};
+
+KeyValueDB::WholeSpaceIterator KeyValueDBMemory::_get_snapshot_iterator() {
+  KeyValueDBMemory *snap_db = new KeyValueDBMemory(this);
+  return std::tr1::shared_ptr<KeyValueDB::WholeSpaceIteratorImpl>(
+    new WholeSpaceSnapshotMemIterator(snap_db)
+  );
+}
