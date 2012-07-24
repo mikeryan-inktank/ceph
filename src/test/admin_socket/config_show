@@ -1,0 +1,12 @@
+#!/usr/bin/perl
+
+use strict;
+
+while (<>) {
+      chomp;
+      next if $_ eq '';
+      my ($key, $value) = /^(\S+) = (.*)$/;
+      die unless defined $key;
+}
+     
+print "ok\n";
