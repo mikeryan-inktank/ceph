@@ -126,7 +126,7 @@ TestFileStoreState::get_coll_at(int pos, bool erase)
 
   if (erase) {
     m_collections.erase(coll_id);
-    m_collections_ids.erase(m_collections_ids.begin()+coll_id);
+    m_collections_ids.erase(m_collections_ids.begin()+pos);
   }
 
   dout(5) << "get_coll_at pos " << pos << ": "
