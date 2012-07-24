@@ -810,7 +810,7 @@ int main(int argc, char **argv)
     } else if (ceph_argparse_binary_flag(args, i, &pretty_format, NULL, "--pretty-format", (char*)NULL)) {
       // do nothing
     } else if (ceph_argparse_binary_flag(args, i, &purge_data, NULL, "--purge-data", (char*)NULL)) {
-      // do nothing
+      purge_data = true;
     } else if (ceph_argparse_binary_flag(args, i, &purge_keys, NULL, "--purge-keys", (char*)NULL)) {
       // do nothing
     } else if (ceph_argparse_binary_flag(args, i, &yes_i_really_mean_it, NULL, "--yes-i-really-mean-it", (char*)NULL)) {
@@ -1403,10 +1403,23 @@ next:
   
   if (opt_cmd == OPT_USER_RM) {
     RGWUserBuckets buckets;
+    int ret;
+
     if (rgw_read_user_buckets(user_id, buckets, false) >= 0) {
       map<string, RGWBucketEnt>& m = buckets.get_buckets();
-      if (m.size() > 0) {
-        cerr << "user bucket list not empty, can't remove user" << std::endl;
+
+      if (m.size() > 0 && purge_data) {
+        for (std::map<string, RGWBucketEnt>::iterator it = m.begin(); it != m.end(); it++) {
+          ret = delete_bucket(((*it).second).bucket, true, false);
+
+          if (ret < 0)
+            return ret;
+        }
+      }
+
+
+      if (m.size() > 0 && !purge_data) {
+        cerr << "ERROR: specify --purge-data to remove a user with a non-empty bucket list" << std::endl;
         return 1;
       }
     }
