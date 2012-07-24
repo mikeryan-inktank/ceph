@@ -229,6 +229,19 @@ KeyValueDB::WholeSpaceIterator KeyValueDBMemory::_get_iterator() {
 
 class WholeSpaceSnapshotMemIterator : public WholeSpaceMemIterator {
 public:
+
+  /**
+   * @note
+   * We perform a copy of the db map, which is populated by bufferlists.
+   *
+   * These are designed as shallow containers, thus there is a chance that
+   * changing the underlying memory pages will lead to the iterator seeing
+   * erroneous states.
+   *
+   * Although we haven't verified this yet, there is this chance, so we should
+   * keep it in mind.
+   */
+
   WholeSpaceSnapshotMemIterator(KeyValueDBMemory *db) :
     WholeSpaceMemIterator(db) { }
   ~WholeSpaceSnapshotMemIterator() {
