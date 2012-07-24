@@ -195,7 +195,7 @@ int WorkloadGenerator::get_uniform_random_value(int min, int max)
 
 TestFileStoreState::coll_entry_t *WorkloadGenerator::get_rnd_coll_entry(bool erase = false)
 {
-  int index = get_uniform_random_value(0, m_collections.size()-1);
+  int index = get_uniform_random_value(0, m_collections_ids.size()-1);
   coll_entry_t *entry = get_coll_at(index, erase);
   return entry;
 }
