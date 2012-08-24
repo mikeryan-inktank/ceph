@@ -1859,8 +1859,8 @@ int SimpleMessenger::Pipe::read_message(Message **pm)
 	
     while (left > 0) {
       // wait for data
-      if (tcp_read_wait(sd, msgr->timeout) < 0)
-	goto out_dethrottle;
+      //if (tcp_read_wait(sd, msgr->timeout) < 0)
+//	goto out_dethrottle;
 
       // get a buffer
       connection_state->lock.Lock();
