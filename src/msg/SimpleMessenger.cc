@@ -2058,33 +2058,19 @@ int SimpleMessenger::Pipe::write_message(Message *m)
   footer.flags = CEPH_MSG_FOOTER_COMPLETE;
   m->calc_header_crc();
 
-  bufferlist blist = m->get_payload();
-  blist.append(m->get_middle());
-  blist.append(m->get_data());
+  bufferlist blist;
   
   ldout(msgr->cct,20)  << "write_message " << m << dendl;
   
-  // set up msghdr and iovecs
-  struct msghdr msg;
-  memset(&msg, 0, sizeof(msg));
-  struct iovec *msgvec = new iovec[3 + blist.buffers().size()];  // conservative upper bound
-  msg.msg_iov = msgvec;
-  int msglen = 0;
   
   // send tag
   char tag = CEPH_MSGR_TAG_MSG;
-  msgvec[msg.msg_iovlen].iov_base = &tag;
-  msgvec[msg.msg_iovlen].iov_len = 1;
-  msglen++;
-  msg.msg_iovlen++;
+  blist.append(&tag, 1);
 
   // send envelope
   ceph_msg_header_old oldheader;
   if (connection_state->has_feature(CEPH_FEATURE_NOSRCADDR)) {
-    msgvec[msg.msg_iovlen].iov_base = (char*)&header;
-    msgvec[msg.msg_iovlen].iov_len = sizeof(header);
-    msglen += sizeof(header);
-    msg.msg_iovlen++;
+    blist.append((char*)&header, sizeof(header));
   } else {
     memcpy(&oldheader, &header, sizeof(header));
     oldheader.src.name = header.src;
@@ -2093,11 +2079,23 @@ int SimpleMessenger::Pipe::write_message(Message *m)
     oldheader.reserved = header.reserved;
     oldheader.crc = ceph_crc32c_le(0, (unsigned char*)&oldheader,
 			      sizeof(oldheader) - sizeof(oldheader.crc));
-    msgvec[msg.msg_iovlen].iov_base = (char*)&oldheader;
-    msgvec[msg.msg_iovlen].iov_len = sizeof(oldheader);
-    msglen += sizeof(oldheader);
-    msg.msg_iovlen++;
+
+    blist.append((char*)&oldheader, sizeof(oldheader));
   }
+
+  blist.append(m->get_payload());
+  blist.append(m->get_middle());
+  blist.append(m->get_data());
+  blist.append((char*)&footer, sizeof(footer));
+  blist.rebuild_page_aligned();
+
+  // set up msghdr and iovecs
+  struct msghdr msg;
+  memset(&msg, 0, sizeof(msg));
+  struct iovec *msgvec = new iovec[blist.buffers().size()];  // conservative upper bound
+  msg.msg_iov = msgvec;
+
+  int msglen = 0;
 
   // payload (front+data)
   list<bufferptr>::const_iterator pb = blist.buffers().begin();
@@ -2145,16 +2143,6 @@ int SimpleMessenger::Pipe::write_message(Message *m)
     }
   }
   assert(left == 0);
-
-  // send footer
-  msgvec[msg.msg_iovlen].iov_base = (void*)&footer;
-  msgvec[msg.msg_iovlen].iov_len = sizeof(footer);
-  msglen += sizeof(footer);
-  msg.msg_iovlen++;
-
-  // send
-  if (do_sendmsg(&msg, msglen))
-    goto fail;
 
   ret = 0;
 
