@@ -2144,6 +2144,8 @@ int SimpleMessenger::Pipe::write_message(Message *m)
   }
   assert(left == 0);
 
+  if (do_sendmsg(&msg, msglen, true))
+    goto fail;
   ret = 0;
 
  out:
