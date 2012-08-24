@@ -213,6 +213,10 @@ testrados_SOURCES = test/osd/TestRados.cc test/osd/TestOpStat.cc test/osd/Object
 testrados_LDADD = librados.la $(LIBGLOBAL_LDA)
 bin_DEBUGPROGRAMS += testrados
 
+msbench_SOURCES = test/messenger_bench/ms_bench.cc test/bench/detailed_stat_collector.cc
+msbench_LDADD = -lboost_program_options $(LIBGLOBAL_LDA)
+bin_DEBUGPROGRAMS += msbench
+
 smalliobench_SOURCES = test/bench/small_io_bench.cc test/bench/rados_backend.cc test/bench/detailed_stat_collector.cc test/bench/bencher.cc
 smalliobench_LDADD = librados.la -lboost_program_options $(LIBGLOBAL_LDA)
 bin_DEBUGPROGRAMS += smalliobench

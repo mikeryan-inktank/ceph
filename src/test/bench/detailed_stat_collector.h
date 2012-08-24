@@ -15,6 +15,7 @@
 #include <ostream>
 
 class DetailedStatCollector : public StatCollector {
+public:
   struct Op {
     string type;
     utime_t start;
@@ -43,10 +44,11 @@ class DetailedStatCollector : public StatCollector {
     bool started;
   public:
     Aggregator();
-    
+    utime_t get_last() const { return last; }
     void add(const Op &op);
     void dump(Formatter *f);
   };
+private:
   const double bin_size;
   boost::scoped_ptr<Formatter> f;
   ostream *out;
