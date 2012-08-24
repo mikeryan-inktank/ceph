@@ -95,7 +95,7 @@ int tcp_read_wait(int sd, int timeout)
 int tcp_read_nonblocking(CephContext *cct, int sd, char *buf, int len)
 {
 again:
-  int got = ::recv( sd, buf, len, 0);//MSG_DONTWAIT );
+  int got = ::recv( sd, buf, len, MSG_WAITALL);//MSG_DONTWAIT );
   if (got < 0) {
     if (errno == EAGAIN || errno == EINTR) {
       goto again;
