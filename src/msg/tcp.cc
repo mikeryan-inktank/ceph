@@ -34,8 +34,8 @@ int tcp_read(CephContext *cct, int sd, char *buf, int len, int timeout)
       }
     }
 
-    if (tcp_read_wait(sd, timeout) < 0)
-      return -1;
+//    if (tcp_read_wait(sd, timeout) < 0)
+//      return -1;
 
     int got = tcp_read_nonblocking(cct, sd, buf, len);
 
