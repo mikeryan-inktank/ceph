@@ -2117,7 +2117,7 @@ int SimpleMessenger::Pipe::write_message(Message *m)
 	     << dendl;
     
     if (msg.msg_iovlen >= IOV_MAX-2) {
-      if (do_sendmsg(&msg, msglen, false))
+      if (do_sendmsg(&msg, msglen, true))
 	goto fail;
       
       // and restart the iov
@@ -2144,7 +2144,7 @@ int SimpleMessenger::Pipe::write_message(Message *m)
   }
   assert(left == 0);
 
-  if (do_sendmsg(&msg, msglen, true))
+  if (do_sendmsg(&msg, msglen))
     goto fail;
   ret = 0;
 
