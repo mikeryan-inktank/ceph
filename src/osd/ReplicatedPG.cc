@@ -6594,7 +6594,8 @@ void ReplicatedPG::_scrub(ScrubMap& scrubmap)
 
   coll_t c(info.pgid);
   bool repair = state_test(PG_STATE_REPAIR);
-  const char *mode = repair ? "repair":"scrub";
+  bool deep_scrub = state_test(PG_STATE_DEEP_SCRUB);
+  const char *mode = (repair ? "repair": (deep_scrub ? "deep-scrub" : "scrub"));
 
   // traverse in reverse order.
   hobject_t head;
@@ -6683,6 +6684,7 @@ void ReplicatedPG::_scrub(ScrubMap& scrubmap)
     //bufferlist data;
     //osd->store->read(c, poid, 0, 0, data);
     //assert(data.length() == p->size);
+    //
 
     if (soid.snap == CEPH_NOSNAP) {
       if (!snapset.head_exists) {
@@ -6735,7 +6737,8 @@ void ReplicatedPG::_scrub_clear_state()
 void ReplicatedPG::_scrub_finish()
 {
   bool repair = state_test(PG_STATE_REPAIR);
-  const char *mode = repair ? "repair":"scrub";
+  bool deep_scrub = state_test(PG_STATE_DEEP_SCRUB);
+  const char *mode = (repair ? "repair": (deep_scrub ? "deep-scrub" : "scrub"));
 
   dout(10) << mode << " got "
 	   << scrub_cstat.sum.num_objects << "/" << info.stats.stats.sum.num_objects << " objects, "
