@@ -1671,34 +1671,48 @@ void SimpleMessenger::Pipe::writer()
       }
 
       // grab outgoing message
-      Message *m = _get_next_outgoing();
-      if (m) {
+      list<Message*> ms;
+      while (1) {
+	Message *m = _get_next_outgoing();
+	if (!m)
+	  break;
+	ms.push_back(m);
 	m->set_seq(++out_seq);
 	if (!policy.lossy || close_on_empty) {
 	  // put on sent list
 	  sent.push_back(m); 
 	  m->get();
+	  ldout(msgr->cct,20) << "writer encoding " << m->get_seq() << " " << m << " " << *m << dendl;
 	}
+      }
+      
+      if (ms.size()) {
 	pipe_lock.Unlock();
 
-        ldout(msgr->cct,20) << "writer encoding " << m->get_seq() << " " << m << " " << *m << dendl;
+	for (list<Message*>::iterator i = ms.begin();
+	     i != ms.end();
+	     ++i) {
+	  Message *m = *i;
 
-	// associate message with Connection (for benefit of encode_payload)
-	m->set_connection(connection_state->get());
-
-	// encode and copy out of *m
-	m->encode(connection_state->get_features(), !msgr->cct->_conf->ms_nocrc);
-
-        ldout(msgr->cct,20) << "writer sending " << m->get_seq() << " " << m << dendl;
-	int rc = write_message(m);
+	  // associate message with Connection (for benefit of encode_payload)
+	  m->set_connection(connection_state->get());
+	  
+	  // encode and copy out of *m
+	  m->encode(connection_state->get_features(), !msgr->cct->_conf->ms_nocrc);
+	  
+	  ldout(msgr->cct,20) << "writer sending " << m->get_seq() << " "
+			      << m << dendl;
+	  int rc = write_message(m);
+	  if (rc < 0) {
+	    ldout(msgr->cct,1) << "writer error sending " << m << ", "
+			       << errno << ": "
+			       << strerror_r(errno, buf, sizeof(buf)) << dendl;
+	    fault();
+	  }
+	  m->put();
+	}
 
 	pipe_lock.Lock();
-	if (rc < 0) {
-          ldout(msgr->cct,1) << "writer error sending " << m << ", "
-		  << errno << ": " << strerror_r(errno, buf, sizeof(buf)) << dendl;
-	  fault();
-        }
-	m->put();
       }
       continue;
     }
