@@ -6642,6 +6642,15 @@ void ReplicatedPG::_scrub(ScrubMap& scrubmap)
     if (soid.snap == CEPH_SNAPDIR) {
       string cat;
       scrub_cstat.add(stat, cat);
+
+      JSONFormatter f(false);
+      stringstream ds;
+      scrub_cstat.dump(&f);
+      f.flush(ds);
+
+      dout(1) << "grep scrub_cstat is " << ds.str() << dendl;
+      dout(1) << "after " << soid << dendl;
+
       continue;
     }
 
@@ -6710,6 +6719,14 @@ void ReplicatedPG::_scrub(ScrubMap& scrubmap)
 
     string cat; // fixme
     scrub_cstat.add(stat, cat);
+
+      JSONFormatter f(false);
+      stringstream ds;
+      scrub_cstat.dump(&f);
+      f.flush(ds);
+      dout(1) << "grep 2 scrub_cstat is " << ds.str() << dendl;
+      dout(1) << "after " << soid << dendl;
+
   }
   
   dout(10) << "_scrub (" << mode << ") finish" << dendl;
@@ -6731,6 +6748,19 @@ void ReplicatedPG::_scrub_finish()
 	   << scrub_cstat.sum.num_object_clones << "/" << info.stats.stats.sum.num_object_clones << " clones, "
 	   << scrub_cstat.sum.num_bytes << "/" << info.stats.stats.sum.num_bytes << " bytes."
 	   << dendl;
+
+      JSONFormatter f(false);
+      stringstream ds;
+      scrub_cstat.dump(&f);
+      f.flush(ds);
+      dout(1) << "grep 3 scrub_cstat is " << ds.str() << dendl;
+
+      JSONFormatter f2(false);
+      stringstream ds2;
+      info.stats.stats.dump(&f2);
+      f2.flush(ds2);
+      dout(1) << "grep 4 info.stat.stat is " << ds2.str() << dendl;
+
 
   if (scrub_cstat.sum.num_objects != info.stats.stats.sum.num_objects ||
       scrub_cstat.sum.num_object_clones != info.stats.stats.sum.num_object_clones ||

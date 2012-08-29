@@ -3258,6 +3258,11 @@ void PG::scrub()
       }
     }
 
+    struct stat buf;
+    if (stat("/tmp/classic", &buf) == 0) {
+        scrubber.is_chunky = false;
+    }
+
     if (scrubber.is_chunky) {
       scrubber.deep = state_test(PG_STATE_DEEP_SCRUB);
     } else {
