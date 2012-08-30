@@ -1055,6 +1055,9 @@ public:
   void on_activate();
   void on_removal();
   void on_shutdown();
+
+  void dump_stats(object_stat_collection_t &stats);
+  void dump_stats();
 };
 
 

@@ -1232,6 +1232,9 @@ void ReplicatedPG::do_backfill(OpRequestRef op)
       info.last_backfill = m->last_backfill;
       info.stats.stats = m->stats;
 
+      dout(1) << "STATS taking stats from backfill" << dendl;
+      dump_stats();
+
       ObjectStore::Transaction *t = new ObjectStore::Transaction;
       write_info(*t);
       int tr = osd->store->queue_transaction(osr.get(), t);
@@ -1363,6 +1366,9 @@ ReplicatedPG::RepGather *ReplicatedPG::trim_object(const hobject_t &coid,
     delta.num_object_clones--;
     delta.num_bytes -= snapset.clone_size[last];
     info.stats.stats.add(delta, obc->obs.oi.category);
+
+    dout(1) << "STATS add delta, trim_object empty newsnaps" << dendl;
+    dump_stats();
 
     snapset.clones.erase(p);
     snapset.clone_overlap.erase(last);
@@ -3344,12 +3350,22 @@ int ReplicatedPG::prepare_transaction(OpContext *ctx)
   ctx->obc->ssc->snapset = ctx->new_snapset;
   info.stats.stats.add(ctx->delta_stats, ctx->obc->obs.oi.category);
 
+  dout(1) << "STATS add delta, prepare_transaction" << dendl;
+  dump_stats();
+
   if (backfill_target >= 0) {
+    dout(1) << "STATS backfill target " << backfill_target << dendl;
     pg_info_t& pinfo = peer_info[backfill_target];
-    if (soid < pinfo.last_backfill)
+    if (soid < pinfo.last_backfill) {
       pinfo.stats.stats.add(ctx->delta_stats, ctx->obc->obs.oi.category);
-    else if (soid < backfill_pos)
+      dout(1) << "STATS target " << backfill_target << " pinfo.stats" << dendl;
+      dump_stats(pinfo.stats.stats);
+    }
+    else if (soid < backfill_pos) {
       pending_backfill_updates[soid].stats.add(ctx->delta_stats, ctx->obc->obs.oi.category);
+      dout(1) << "STATS pending backfill [soid: " << soid << "]" << dendl;
+      dump_stats(pending_backfill_updates[soid].stats);
+    }
   }
 
   if (scrubber.active && scrubber.is_chunky) {
@@ -6470,7 +6486,9 @@ int ReplicatedPG::recover_backfill(int max)
   }
 
   dout(10) << " peer num_objects now " << pinfo.stats.stats.sum.num_objects
-	   << " / " << info.stats.stats.sum.num_objects << dendl;
+	   << " / " << pinfo.stats.stats.sum.num_objects << dendl;
+  dout(1) << "STATS prob not gonna happen" << dendl;
+  dump_stats(pinfo.stats.stats);
   return ops;
 }
 
@@ -6784,6 +6802,21 @@ void ReplicatedPG::_scrub_finish()
   }
 }
 
+void ReplicatedPG::dump_stats(object_stat_collection_t &stats)
+{
+  dout(1) << "STATS "
+	  << stats.sum.num_objects << " objects, "
+	  << stats.sum.num_object_clones << " clones, "
+	  << stats.sum.num_bytes << " bytes."
+          << dendl;
+}
+
+void ReplicatedPG::dump_stats()
+{
+  dump_stats(info.stats.stats);
+}
+
+
 /*---SnapTrimmer Logging---*/
 #undef dout_prefix
 #define dout_prefix *_dout << pg->gen_prefix() 
@@ -7029,5 +7062,3 @@ boost::statechart::result ReplicatedPG::WaitingOnReplicas::react(const SnapTrim&
   post_event(SnapTrim());
   return transit< NotTrimming >();
 }
-
-
