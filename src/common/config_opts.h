@@ -263,6 +263,9 @@ OPTION(osd_auto_upgrade_tmap, OPT_BOOL, true)
 // If true, TMAPPUT sets uses_tmap DEBUGGING ONLY
 OPTION(osd_tmapput_sets_uses_tmap, OPT_BOOL, false)
 
+// if true always use classic scrub
+OPTION(osd_force_classic_scrub, OPT_BOOL, false)
+
 OPTION(osd_uuid, OPT_UUID, uuid_d())
 OPTION(osd_data, OPT_STR, "/var/lib/ceph/osd/$cluster-$id")
 OPTION(osd_journal, OPT_STR, "/var/lib/ceph/osd/$cluster-$id/journal")

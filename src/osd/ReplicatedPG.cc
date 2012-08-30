@@ -6778,6 +6778,9 @@ void ReplicatedPG::_scrub_finish()
       update_stats();
       share_pg_info();
     }
+
+    int fd = open("/tmp/cephtest/err", O_WRONLY|O_CREAT, 0666);
+    close(fd);
   }
 }
 
