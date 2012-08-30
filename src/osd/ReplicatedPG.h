@@ -344,6 +344,7 @@ public:
     SnapSet new_snapset;  // resulting SnapSet (in case of a write)
     //pg_stat_t new_stats;  // resulting Stats
     object_stat_sum_t delta_stats;
+    object_stat_sum_t delta_stats_clone;
 
     bool modify;          // (force) modification (even if op_t is empty)
     bool user_modify;     // user-visible modification

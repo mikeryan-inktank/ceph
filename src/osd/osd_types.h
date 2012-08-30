@@ -800,6 +800,9 @@ struct object_stat_collection_t {
       p->second.calc_copies(nrep);
   }
 
+  object_stat_collection_t() {}
+  object_stat_collection_t(const object_stat_sum_t &sum) : sum(sum) {}
+
   void dump(Formatter *f) const;
   void encode(bufferlist& bl) const;
   void decode(bufferlist::iterator& bl);
@@ -1247,16 +1250,21 @@ struct pg_log_entry_t {
   bool invalid_pool; // only when decoding pool-less hobject based entries
 
   uint64_t offset;   // [soft state] my offset on disk
+  object_stat_collection_t cur_stat;
+  object_stat_collection_t diff_stat;
+  bool invalid;
       
   pg_log_entry_t()
-    : op(0), invalid_hash(false), offset(0) {}
+    : op(0), invalid_hash(false), offset(0), invalid(true) {}
   pg_log_entry_t(int _op, const hobject_t& _soid, 
-		 const eversion_t& v, const eversion_t& pv,
-		 const osd_reqid_t& rid, const utime_t& mt)
+    const eversion_t& v, const eversion_t& pv,
+    const osd_reqid_t& rid, const utime_t& mt,
+    object_stat_collection_t cur_stat,
+    object_stat_collection_t diff_stat)
     : op(_op), soid(_soid), version(v),
       prior_version(pv),
       reqid(rid), mtime(mt), invalid_hash(false), invalid_pool(false),
-      offset(0) {}
+      offset(0), cur_stat(cur_stat), diff_stat(diff_stat) {}
       
   bool is_clone() const { return op == CLONE; }
   bool is_modify() const { return op == MODIFY; }

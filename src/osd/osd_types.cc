@@ -1583,6 +1583,8 @@ void pg_log_entry_t::encode(bufferlist &bl) const
   ::encode(mtime, bl);
   if (op == CLONE)
     ::encode(snaps, bl);
+  ::encode(cur_stat, bl);
+  ::encode(diff_stat, bl);
   ENCODE_FINISH(bl);
 }
 
@@ -1609,6 +1611,8 @@ void pg_log_entry_t::decode(bufferlist::iterator &bl)
     ::decode(snaps, bl);
   if (struct_v < 5)
     invalid_pool = true;
+  ::decode(cur_stat, bl);
+  ::decode(diff_stat, bl);
   DECODE_FINISH(bl);
 }
 
@@ -1627,7 +1631,9 @@ void pg_log_entry_t::generate_test_instances(list<pg_log_entry_t*>& o)
   o.push_back(new pg_log_entry_t());
   hobject_t oid(object_t("objname"), "key", 123, 456, 0);
   o.push_back(new pg_log_entry_t(MODIFY, oid, eversion_t(1,2), eversion_t(3,4),
-				 osd_reqid_t(entity_name_t::CLIENT(777), 8, 999), utime_t(8,9)));
+				 osd_reqid_t(entity_name_t::CLIENT(777), 8, 999),
+				 utime_t(8,9), object_stat_collection_t(),
+				 object_stat_collection_t()));
 }
 
 ostream& operator<<(ostream& out, const pg_log_entry_t& e)

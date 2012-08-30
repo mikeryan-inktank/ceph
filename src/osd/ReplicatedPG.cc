@@ -1374,8 +1374,10 @@ ReplicatedPG::RepGather *ReplicatedPG::trim_object(const hobject_t &coid,
     snapset.clone_overlap.erase(last);
     snapset.clone_size.erase(last);
 	
-    ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::DELETE, coid, ctx->at_version, ctx->obs->oi.version,
-				  osd_reqid_t(), ctx->mtime));
+    ctx->log.push_back(pg_log_entry_t(
+	pg_log_entry_t::DELETE, coid, ctx->at_version, ctx->obs->oi.version,
+	osd_reqid_t(), ctx->mtime,
+	info.stats.stats, delta));
     ctx->at_version.version++;
   } else {
     // save adjusted snaps for this object
@@ -1399,8 +1401,9 @@ ReplicatedPG::RepGather *ReplicatedPG::trim_object(const hobject_t &coid,
 	t->collection_add(coll_t(info.pgid, snaps[snaps.size()-1]), coll, coid);
     }	      
 
-    ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::MODIFY, coid, coi.version, coi.prior_version,
-				  osd_reqid_t(), ctx->mtime));
+    ctx->log.push_back(pg_log_entry_t(
+	pg_log_entry_t::MODIFY, coid, coi.version, coi.prior_version,
+	osd_reqid_t(), ctx->mtime, info.stats.stats, object_stat_collection_t()));
     ::encode(coi, ctx->log.back().snaps);
     ctx->at_version.version++;
   }
@@ -1415,15 +1418,19 @@ ReplicatedPG::RepGather *ReplicatedPG::trim_object(const hobject_t &coid,
   assert(ctx->snapset_obc->registered);
   if (snapset.clones.empty() && !snapset.head_exists) {
     dout(10) << coid << " removing " << snapoid << dendl;
-    ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::DELETE, snapoid, ctx->at_version, 
-				  ctx->snapset_obc->obs.oi.version, osd_reqid_t(), ctx->mtime));
+    ctx->log.push_back(pg_log_entry_t(
+	pg_log_entry_t::DELETE, snapoid, ctx->at_version, 
+	ctx->snapset_obc->obs.oi.version, osd_reqid_t(), ctx->mtime,
+	info.stats.stats, object_stat_collection_t()));
     ctx->snapset_obc->obs.exists = false;
 
     t->remove(coll, snapoid);
   } else {
     dout(10) << coid << " updating snapset on " << snapoid << dendl;
-    ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::MODIFY, snapoid, ctx->at_version, 
-				  ctx->snapset_obc->obs.oi.version, osd_reqid_t(), ctx->mtime));
+    ctx->log.push_back(pg_log_entry_t(
+	pg_log_entry_t::MODIFY, snapoid, ctx->at_version, 
+	ctx->snapset_obc->obs.oi.version, osd_reqid_t(), ctx->mtime,
+	info.stats.stats, object_stat_collection_t()));
 
     ctx->snapset_obc->obs.oi.prior_version = ctx->snapset_obc->obs.oi.version;
     ctx->snapset_obc->obs.oi.version = ctx->at_version;
@@ -2998,8 +3005,8 @@ void ReplicatedPG::make_writeable(OpContext *ctx)
       t.collection_add(lc, coll, coid);
     }
     
-    ctx->delta_stats.num_objects++;
-    ctx->delta_stats.num_object_clones++;
+    ctx->delta_stats_clone.num_objects++;
+    ctx->delta_stats_clone.num_object_clones++;
     ctx->new_snapset.clones.push_back(coid.snap);
     ctx->new_snapset.clone_size[coid.snap] = ctx->obs->oi.size;
 
@@ -3013,8 +3020,12 @@ void ReplicatedPG::make_writeable(OpContext *ctx)
     dout(10) << " cloning v " << ctx->obs->oi.version
 	     << " to " << coid << " v " << ctx->at_version
 	     << " snaps=" << snaps << dendl;
-    ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::CLONE, coid, ctx->at_version,
-				  ctx->obs->oi.version, ctx->reqid, ctx->new_obs.oi.mtime));
+    object_stat_collection_t cur = info.stats.stats;
+    cur.add(ctx->delta_stats_clone);
+    ctx->log.push_back(pg_log_entry_t(
+	pg_log_entry_t::CLONE, coid, ctx->at_version,
+	ctx->obs->oi.version, ctx->reqid, ctx->new_obs.oi.mtime,
+	cur, ctx->delta_stats_clone));
     ::encode(snaps, ctx->log.back().snaps);
 
     ctx->at_version.version++;
@@ -3279,11 +3290,16 @@ int ReplicatedPG::prepare_transaction(OpContext *ctx)
   assert(ctx->new_obs.exists == ctx->new_snapset.head_exists);
 
   // append to log
+  object_stat_collection_t cur = info.stats.stats;
+  cur.add(ctx->delta_stats_clone);
+  cur.add(ctx->delta_stats);
   int logopcode = pg_log_entry_t::MODIFY;
   if (!ctx->new_obs.exists)
     logopcode = pg_log_entry_t::DELETE;
-  ctx->log.push_back(pg_log_entry_t(logopcode, soid, ctx->at_version, old_version,
-				ctx->reqid, ctx->mtime));
+  ctx->log.push_back(pg_log_entry_t(
+      logopcode, soid, ctx->at_version, old_version,
+      ctx->reqid, ctx->mtime,
+      cur, ctx->delta_stats));
 
   if (ctx->new_obs.exists) {
     ctx->new_obs.oi.version = ctx->at_version;
@@ -3314,8 +3330,10 @@ int ReplicatedPG::prepare_transaction(OpContext *ctx)
 	dout(10) << " removing old " << snapoid << dendl;
 
 	ctx->at_version.version++;
-	ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::DELETE, snapoid, ctx->at_version, old_version,
-				      osd_reqid_t(), ctx->mtime));
+	ctx->log.push_back(pg_log_entry_t(
+	    pg_log_entry_t::DELETE, snapoid, ctx->at_version, old_version,
+	    osd_reqid_t(), ctx->mtime,
+	    cur, object_stat_collection_t()));
 
 	ctx->snapset_obc->obs.exists = false;
 	assert(ctx->snapset_obc->registered);
@@ -3328,8 +3346,10 @@ int ReplicatedPG::prepare_transaction(OpContext *ctx)
     dout(10) << " final snapset " << ctx->new_snapset
 	     << " in " << snapoid << dendl;
     ctx->at_version.version++;
-    ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::MODIFY, snapoid, ctx->at_version, old_version,
-				  osd_reqid_t(), ctx->mtime));
+    ctx->log.push_back(pg_log_entry_t(
+	pg_log_entry_t::MODIFY, snapoid, ctx->at_version, old_version,
+	osd_reqid_t(), ctx->mtime,
+	cur, object_stat_collection_t()));
 
     ctx->snapset_obc = get_object_context(snapoid, ctx->new_obs.oi.oloc, true);
     ctx->snapset_obc->obs.exists = true;
@@ -3348,6 +3368,7 @@ int ReplicatedPG::prepare_transaction(OpContext *ctx)
   // apply new object state.
   ctx->obc->obs = ctx->new_obs;
   ctx->obc->ssc->snapset = ctx->new_snapset;
+  ctx->delta_stats.add(ctx->delta_stats_clone);
   info.stats.stats.add(ctx->delta_stats, ctx->obc->obs.oi.category);
 
   dout(1) << "STATS add delta, prepare_transaction" << dendl;
@@ -3922,9 +3943,10 @@ void ReplicatedPG::handle_watch_timeout(void *_obc,
   ObjectStore::Transaction *t = &ctx->op_t;
 
   ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::MODIFY, obc->obs.oi.soid,
-				ctx->at_version,
-				obc->obs.oi.version,
-				osd_reqid_t(), ctx->mtime));
+				    ctx->at_version,
+				    obc->obs.oi.version,
+				    osd_reqid_t(), ctx->mtime,
+				    info.stats.stats, object_stat_collection_t()));
 
   eversion_t old_last_update = log.head;
   bool old_exists = repop->obc->obs.exists;
@@ -5629,7 +5651,8 @@ ReplicatedPG::ObjectContext *ReplicatedPG::mark_object_lost(ObjectStore::Transac
 
   // Add log entry
   ++info.last_update.version;
-  pg_log_entry_t e(what, oid, info.last_update, version, osd_reqid_t(), mtime);
+  pg_log_entry_t e(what, oid, info.last_update, version, osd_reqid_t(), mtime,
+    info.stats.stats, object_stat_collection_t());
   log.add(e);
   
   object_locator_t oloc;
@@ -5703,7 +5726,8 @@ void ReplicatedPG::mark_all_unfound_lost(int what)
       if (prev > eversion_t()) {
 	// log it
 	++info.last_update.version;
-	pg_log_entry_t e(pg_log_entry_t::LOST_REVERT, oid, info.last_update, prev, osd_reqid_t(), mtime);
+	pg_log_entry_t e(pg_log_entry_t::LOST_REVERT, oid, info.last_update, prev,
+	  osd_reqid_t(), mtime, info.stats.stats, object_stat_collection_t());
 	log.add(e);
 	dout(10) << e << dendl;
 
@@ -5718,8 +5742,9 @@ void ReplicatedPG::mark_all_unfound_lost(int what)
       {
 	// log it
       	++info.last_update.version;
-	pg_log_entry_t e(pg_log_entry_t::LOST_DELETE, oid, info.last_update, m->second.need,
-		     osd_reqid_t(), mtime);
+	pg_log_entry_t e(pg_log_entry_t::LOST_DELETE, oid, info.last_update,
+	  m->second.need,
+	  osd_reqid_t(), mtime, info.stats.stats, object_stat_collection_t());
 	log.add(e);
 	dout(10) << e << dendl;
 

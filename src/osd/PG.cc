@@ -2041,8 +2041,23 @@ void PG::init(int role, vector<int>& newup, vector<int>& newacting, pg_history_t
   write_log(*t);
 }
 
+ostream &operator<<(ostream & out, const object_stat_collection_t &o)  {
+  JSONFormatter f;
+  o.dump(&f);
+  f.flush(out);
+  return out;
+}
+
 void PG::write_info(ObjectStore::Transaction& t)
 {
+  if (log.log.size() && info.last_backfill.is_max()) {
+    dout(0) << "cur is " << info.stats.stats << dendl;
+    dout(0) << "log is " << log.log.rbegin()->cur_stat.sum << dendl;
+    object_stat_sum_t cur = info.stats.stats.sum;
+    cur.sub(log.log.rbegin()->cur_stat.sum);
+    assert(cur.is_zero());
+  }
+  
   // pg state
   bufferlist infobl;
   __u8 struct_v = 4;
@@ -2063,6 +2078,11 @@ void PG::write_info(ObjectStore::Transaction& t)
 
 void PG::write_log(ObjectStore::Transaction& t)
 {
+  if (log.log.size() && info.last_backfill.is_max()) {
+    object_stat_sum_t cur = info.stats.stats.sum;
+    cur.sub(log.log.rbegin()->cur_stat.sum);
+    assert(cur.is_zero());
+  }
   dout(10) << "write_log" << dendl;
 
   // assemble buffer
