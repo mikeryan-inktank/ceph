@@ -4337,8 +4337,8 @@ void ReplicatedPG::sub_op_modify(OpRequestRef op)
 	rm->opt.set_pool_override(info.pgid.pool());
       }
       
-      info.stats = m->pg_stats;
       update_snap_collections(log, rm->localt);
+      info.stats = m->pg_stats;
       append_log(log, m->pg_trim_to, rm->localt);
 
       rm->tls.push_back(&rm->localt);
