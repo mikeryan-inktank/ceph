@@ -39,8 +39,7 @@ check_PROGRAMS =
 TESTS = $(check_PROGRAMS)
 
 check-local:
-	$(srcdir)/test/encoding/check-generated.sh
-	$(srcdir)/test/encoding/readable.sh ../ceph-object-corpus
+	true
 
 EXTRALIBS = -luuid
 if FREEBSD
@@ -932,8 +931,6 @@ EXTRA_DIST += \
 	$(srcdir)/.git_version \
 	$(srcdir)/ceph-rbdnamer \
 	$(ceph_tool_gui_DATA) \
-	$(srcdir)/test/encoding/readable.sh \
-	$(srcdir)/test/encoding/check-generated.sh \
 	$(srcdir)/upstart/ceph-mon.conf \
 	$(srcdir)/upstart/ceph-mon-all.conf \
 	$(srcdir)/upstart/ceph-mon-all-starter.conf \
