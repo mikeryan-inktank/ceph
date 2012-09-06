@@ -178,6 +178,10 @@ int main(int argc, char **argv)
      "max unacknoledged messages")
     ("size", po::value<unsigned>()->default_value(4<<20),
      "size to send")
+    ("buf-size", po::value<string>()->default_value(""),
+     "send/recv buf size")
+    ("dump-buf-size", po::value<bool>()->default_value(false),
+     "dump send/recv buf size")
     ;
 
   po::variables_map vm;
@@ -194,6 +198,14 @@ int main(int argc, char **argv)
     cct->_conf->set_val("log_to_stderr", "1");
   if (!vm["disable-nagle"].as<bool>())
     cct->_conf->set_val("ms_tcp_nodelay", "false");
+  if (vm["buf-size"].as<string>().size()) {
+    cct->_conf->set_val("ms_tcp_send_buf_size",
+		       vm["buf-size"].as<string>().c_str());
+    cct->_conf->set_val("ms_tcp_recv_buf_size",
+		       vm["buf-size"].as<string>().c_str());
+  }
+  if (vm["dump-buf-size"].as<bool>())
+    cct->_conf->set_val("ms_tcp_dump_buf_size", "true");
   cct->_conf->apply_changes(NULL);
   
   entity_addr_t server_addr;

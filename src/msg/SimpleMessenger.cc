@@ -231,6 +231,52 @@ void *SimpleMessenger::Accepter::entry()
 	if (r < 0)
 	  ldout(msgr->cct,0) << "accepter could't set TCP_NODELAY: " << strerror_r(errno, buf, sizeof(buf)) << dendl;
       }
+
+      if (conf->ms_tcp_recv_buf_size) {
+	int recv_buf_size = conf->ms_tcp_recv_buf_size;
+	int r = ::setsockopt(sd, SOL_SOCKET, SO_RCVBUF,
+			     &recv_buf_size,
+			     sizeof(recv_buf_size));
+	if (r < 0)
+	  ldout(msgr->cct,0) << "accept could't set SO_RCVBUF: "
+			     << strerror_r(errno, buf, sizeof(buf)) << dendl;
+      }
+      if (conf->ms_tcp_send_buf_size) {
+	int send_buf_size = conf->ms_tcp_send_buf_size;
+	int r = ::setsockopt(sd, SOL_SOCKET, SO_SNDBUF,
+			     &send_buf_size,
+			     sizeof(send_buf_size));
+	if (r < 0)
+	  ldout(msgr->cct,0) << "accept could't set SO_SNDBUF: "
+			     << strerror_r(errno, buf, sizeof(buf)) << dendl;
+      }
+
+      if (conf->ms_tcp_dump_buf_size) {
+	int recv_buf_size_actual = 0;
+	unsigned size = sizeof(recv_buf_size_actual);
+	int r = ::getsockopt(sd, SOL_SOCKET, SO_RCVBUF,
+			 &recv_buf_size_actual,
+			 &size);
+	if (r < 0) {
+	  ldout(msgr->cct,0) << "accept could't get SO_RCVBUF: "
+			     << strerror_r(errno, buf, sizeof(buf)) << dendl;
+	} else {
+	  ldout(msgr->cct, 5) << "accept rcv_buf_size_actual is "
+			      << recv_buf_size_actual << dendl;
+	}
+	int send_buf_size_actual = 0;
+	size = sizeof(send_buf_size_actual);
+	r = ::getsockopt(sd, SOL_SOCKET, SO_SNDBUF,
+			 &send_buf_size_actual,
+			 &size);
+	if (r < 0) {
+	  ldout(msgr->cct,0) << "accept could't get SO_SNDBUF: "
+			     << strerror_r(errno, buf, sizeof(buf)) << dendl;
+	} else {
+	  ldout(msgr->cct, 5) << "accept send_buf_size_actual is "
+			      << send_buf_size_actual << dendl;
+	}
+      }
       
       msgr->lock.Lock();
 
@@ -1018,6 +1064,53 @@ int SimpleMessenger::Pipe::connect()
     int r = ::setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(flag));
     if (r < 0) 
       ldout(msgr->cct,0) << "connect couldn't set TCP_NODELAY: " << strerror_r(errno, buf, sizeof(buf)) << dendl;
+  }
+
+  if (conf->ms_tcp_recv_buf_size) {
+    int recv_buf_size = conf->ms_tcp_recv_buf_size;
+    int r = ::setsockopt(sd, SOL_SOCKET, SO_RCVBUF,
+			 &recv_buf_size,
+			 sizeof(recv_buf_size));
+    if (r < 0)
+      ldout(msgr->cct,0) << "connect could't set SO_RCVBUF: "
+			 << strerror_r(errno, buf, sizeof(buf)) << dendl;
+  }
+  if (conf->ms_tcp_send_buf_size) {
+    int send_buf_size = conf->ms_tcp_send_buf_size;
+    int r = ::setsockopt(sd, SOL_SOCKET, SO_SNDBUF,
+			 &send_buf_size,
+			 sizeof(send_buf_size));
+    if (r < 0)
+      ldout(msgr->cct,0) << "connect could't set SO_SNDBUF: "
+			 << strerror_r(errno, buf, sizeof(buf)) << dendl;
+
+  }
+
+  if (conf->ms_tcp_dump_buf_size) {
+    int recv_buf_size_actual = 0;
+    unsigned size = sizeof(recv_buf_size_actual);
+    int r = ::getsockopt(sd, SOL_SOCKET, SO_RCVBUF,
+			 &recv_buf_size_actual,
+			 &size);
+    if (r < 0) {
+      ldout(msgr->cct,0) << "connect could't get SO_RCVBUF: "
+			 << strerror_r(errno, buf, sizeof(buf)) << dendl;
+    } else {
+      ldout(msgr->cct, 5) << "connect rcv_buf_size_actual is "
+			  << recv_buf_size_actual << dendl;
+    }
+    int send_buf_size_actual = 0;
+    size = sizeof(send_buf_size_actual);
+    r = ::getsockopt(sd, SOL_SOCKET, SO_SNDBUF,
+		     &send_buf_size_actual,
+		     &size);
+    if (r < 0) {
+      ldout(msgr->cct,0) << "connect could't get SO_SNDBUF: "
+			 << strerror_r(errno, buf, sizeof(buf)) << dendl;
+    } else {
+      ldout(msgr->cct, 5) << "connect send_buf_size_actual is "
+			  << send_buf_size_actual << dendl;
+    }
   }
 
   // verify banner
