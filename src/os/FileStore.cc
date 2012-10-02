@@ -204,15 +204,29 @@ int FileStore::lfn_find(coll_t cid, const hobject_t& oid, IndexedPath *path)
   return 0;
 }
 
-int FileStore::lfn_getxattr(coll_t cid, const hobject_t& oid, const char *name, void *val, size_t size)
+int FileStore::lfn_getxattr(
+  coll_t cid, const hobject_t& oid,
+  const char *name, bufferptr &bp)
 {
-  IndexedPath path;
-  int r = lfn_find(cid, oid, &path);
-  if (r < 0)
-    return r;
-  r = do_getxattr(path->path(), name, val, size);
+  int fd = lfn_open(cid, oid, O_RDONLY);
+  if (fd < 0)
+    return fd;
+  if (r >= 0) {
+  }
   assert(!m_filestore_fail_eio || r != -EIO);
-  return r;
+  char val[100];
+  int l = lfn_getxattr(cid, oid, name, val, sizeof(val));
+  if (l >= 0) {
+    bp = buffer::create(l);
+    memcpy(bp.c_str(), val, l);
+  } else if (l == -ERANGE) {
+    l = lfn_fgetxattr(fd, name, 0, 0);
+    if (l > 0) {
+      bp = buffer::create(l);
+      l = lfn_fgetxattr(fd, name, bp.c_str(), l);
+    }
+  }
+  return l;
 }
 
 int FileStore::lfn_setxattr(coll_t cid, const hobject_t& oid, const char *name, const void *val, size_t size)
@@ -3894,24 +3908,6 @@ int FileStore::snapshot(const string& name)
 // -------------------------------
 // attributes
 
-// low-level attr helpers
-int FileStore::_getattr(coll_t cid, const hobject_t& oid, const char *name, bufferptr& bp)
-{
-  char val[100];
-  int l = lfn_getxattr(cid, oid, name, val, sizeof(val));
-  if (l >= 0) {
-    bp = buffer::create(l);
-    memcpy(bp.c_str(), val, l);
-  } else if (l == -ERANGE) {
-    l = lfn_getxattr(cid, oid, name, 0, 0);
-    if (l > 0) {
-      bp = buffer::create(l);
-      l = lfn_getxattr(cid, oid, name, bp.c_str(), l);
-    }
-  }
-  return l;
-}
-
 int FileStore::_getattr(const char *fn, const char *name, bufferptr& bp)
 {
   char val[100];
@@ -4051,7 +4047,7 @@ int FileStore::getattr(coll_t cid, const hobject_t& oid, const char *name, buffe
   dout(15) << "getattr " << cid << "/" << oid << " '" << name << "'" << dendl;
   char n[ATTR_MAX_NAME_LEN];
   get_attrname(name, n, ATTR_MAX_NAME_LEN);
-  int r = _getattr(cid, oid, n, bp);
+  int r = lfn_getxattr(cid, oid, n, bp);
   if (r == -ENODATA && g_conf->filestore_xattr_use_omap) {
     map<string, bufferlist> got;
     set<string> to_get;

@@ -274,7 +274,7 @@ private:
 
 public:
   int lfn_find(coll_t cid, const hobject_t& oid, IndexedPath *path);
-  int lfn_getxattr(coll_t cid, const hobject_t& oid, const char *name, void *val, size_t size);
+  int lfn_getxattr(coll_t cid, const hobject_t& oid, const char *name, bufferptr &bp);
   int lfn_setxattr(coll_t cid, const hobject_t& oid, const char *name, const void *val, size_t size);
   int lfn_removexattr(coll_t cid, const hobject_t& oid, const char *name);
   int lfn_listxattr(coll_t cid, const hobject_t& oid, char *names, size_t len);
@@ -404,7 +404,6 @@ public:
   int getattr(coll_t cid, const hobject_t& oid, const char *name, bufferptr &bp);
   int getattrs(coll_t cid, const hobject_t& oid, map<string,bufferptr>& aset, bool user_only = false);
 
-  int _getattr(coll_t cid, const hobject_t& oid, const char *name, bufferptr& bp);
   int _getattrs(coll_t cid, const hobject_t& oid, map<string,bufferptr>& aset, bool user_only = false) ;
   int _getattr(const char *fn, const char *name, bufferptr& bp);
   int _getattrs(const char *fn, map<string,bufferptr>& aset, bool user_only = false);
