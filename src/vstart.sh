@@ -312,6 +312,7 @@ $DAEMONOPTS
         osd class dir = .libs
         osd scrub load threshold = 5.0
         filestore xattr use omap = true
+        osd min pg log entries = 5
 $COSDDEBUG
 $extra_conf
 [mon]
