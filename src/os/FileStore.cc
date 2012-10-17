@@ -135,7 +135,9 @@ int do_fgetxattr(int fd, const char *name, void *val, size_t size);
 int do_setxattr(const char *fn, const char *name, const void *val, size_t size);
 int do_fsetxattr(int fd, const char *name, const void *val, size_t size);
 int do_setxattr(const char *fn, const char *name, const void *val, size_t size);
+int do_flistxattr(int fd, char *names, size_t len);
 int do_listxattr(const char *fn, char *names, size_t len);
+int do_fremovexattr(int fd, const char *name);
 int do_removexattr(const char *fn, const char *name);
 
 static int sys_fgetxattr(int fd, const char *name, void *val, size_t size)
@@ -209,55 +211,46 @@ int FileStore::lfn_getxattr(
   const char *name, bufferptr &bp)
 {
   int fd = lfn_open(cid, oid, O_RDONLY);
+  assert(!m_filestore_fail_eio || fd != -EIO);
   if (fd < 0)
     return fd;
-  if (r >= 0) {
-  }
-  assert(!m_filestore_fail_eio || r != -EIO);
-  char val[100];
-  int l = lfn_getxattr(cid, oid, name, val, sizeof(val));
-  if (l >= 0) {
+  int l = do_fgetxattr(fd, name, 0, 0); // get length
+  if (l > 0) {
     bp = buffer::create(l);
-    memcpy(bp.c_str(), val, l);
-  } else if (l == -ERANGE) {
-    l = lfn_fgetxattr(fd, name, 0, 0);
-    if (l > 0) {
-      bp = buffer::create(l);
-      l = lfn_fgetxattr(fd, name, bp.c_str(), l);
-    }
+    l = do_fgetxattr(fd, name, bp.c_str(), l);
   }
   return l;
 }
 
 int FileStore::lfn_setxattr(coll_t cid, const hobject_t& oid, const char *name, const void *val, size_t size)
 {
-  IndexedPath path;
-  int r = lfn_find(cid, oid, &path);
-  if (r < 0)
-    return r;
-  r = do_setxattr(path->path(), name, val, size);
+  int fd = lfn_open(cid, oid, O_WRONLY);
+  assert(!m_filestore_fail_eio || fd != -EIO);
+  if (fd < 0)
+    return fd;
+  int r = do_fsetxattr(fd, name, val, size);
   assert(!m_filestore_fail_eio || r != -EIO);
   return r;
 }
 
 int FileStore::lfn_removexattr(coll_t cid, const hobject_t& oid, const char *name)
 {
-  IndexedPath path;
-  int r = lfn_find(cid, oid, &path);
-  if (r < 0)
-    return r;
-  r = do_removexattr(path->path(), name);
+  int fd = lfn_open(cid, oid, O_WRONLY);
+  assert(!m_filestore_fail_eio || fd != -EIO);
+  if (fd < 0)
+    return fd;
+  int r = do_fremovexattr(fd, name);
   assert(!m_filestore_fail_eio || r != -EIO);
   return r;
 }
 
 int FileStore::lfn_listxattr(coll_t cid, const hobject_t& oid, char *names, size_t len)
 {
-  IndexedPath path;
-  int r = lfn_find(cid, oid, &path);
-  if (r < 0)
-    return r;
-  r = do_listxattr(path->path(), names, len);
+  int fd = lfn_open(cid, oid, O_RDONLY);
+  assert(!m_filestore_fail_eio || fd != -EIO);
+  if (fd < 0)
+    return fd;
+  int r = do_flistxattr(fd, names, len);
   assert(!m_filestore_fail_eio || r != -EIO);
   return r;
 }
@@ -667,6 +660,22 @@ int do_removexattr(const char *fn, const char *name) {
   do {
     get_raw_xattr_name(name, i, raw_name, sizeof(raw_name));
     r = sys_removexattr(fn, raw_name);
+    if (!i && r < 0) {
+      return r;
+    }
+    i++;
+  } while (r >= 0);
+  return 0;
+}
+
+int do_fremovexattr(int fd, const char *name) {
+  int i = 0;
+  char raw_name[ATTR_MAX_NAME_LEN * 2 + 16];
+  int r;
+
+  do {
+    get_raw_xattr_name(name, i, raw_name, sizeof(raw_name));
+    r = ::ceph_os_fremovexattr(fd, raw_name);
     if (!i && r < 0) {
       return r;
     }
@@ -3926,63 +3935,17 @@ int FileStore::_getattr(const char *fn, const char *name, bufferptr& bp)
   return l;
 }
 
-// note that this is a clone of the method below.. any change here should be reflected there 
 int FileStore::_getattrs(coll_t cid, const hobject_t& oid, map<string,bufferptr>& aset, bool user_only) 
 {
-  // get attr list
-  char names1[100];
-  int len = lfn_listxattr(cid, oid, names1, sizeof(names1)-1);
-  char *names2 = 0;
-  char *name = 0;
-  if (len == -ERANGE) {
-    len = lfn_listxattr(cid, oid, 0, 0);
-    if (len < 0)
-      return len;
-    dout(10) << " -ERANGE, len is " << len << dendl;
-    names2 = new char[len+1];
-    len = lfn_listxattr(cid, oid, names2, len);
-    dout(10) << " -ERANGE, got " << len << dendl;
-    if (len < 0)
-      return len;
-    name = names2;
-  } else if (len < 0)
-    return len;
-  else
-    name = names1;
-  name[len] = 0;
-
-  char *end = name + len;
-  while (name < end) {
-    char *attrname = name;
-    if (parse_attrname(&name)) {
-      char *set_name = name;
-      bool can_get = true;
-      if (user_only) {
-          if (*set_name =='_')
-            set_name++;
-          else
-            can_get = false;
-      }
-      if (*set_name && can_get) {
-        dout(20) << "getattrs " << cid << "/" << oid << " getting '" << name << "'" << dendl;
-      
-        int r = _getattr(cid, oid, attrname, aset[set_name]);
-        if (r < 0) {
-	  assert(!m_filestore_fail_eio || r != -EIO);
-	  return r;
-	}
-      }
-    }
-    name += strlen(name) + 1;
+  IndexedPath path;
+  int r = lfn_find(cid, oid, &path);
+  if (r < 0) {
+    assert(!m_filestore_fail_eio || r != -EIO);
+    return r;
   }
-
-  delete[] names2;
-  return 0;
+  return _getattrs(path->path(), aset, user_only);
 }
 
-
-// note that this is a clone of the method above.. any change here should be reflected
-// there
 int FileStore::_getattrs(const char *fn, map<string,bufferptr>& aset, bool user_only) 
 {
   // get attr list
