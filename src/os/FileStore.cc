@@ -730,6 +730,52 @@ done:
   return r;
 }
 
+int do_flistxattr(int fd, char *names, size_t len) {
+  int r;
+
+  if (!len)
+    return ::ceph_os_flistxattr(fd, names, len);
+
+  r = ::ceph_os_flistxattr(fd, 0, 0);
+  if (r < 0)
+    return r;
+
+  size_t total_len = r  * 2; // should be enough
+  char *full_buf = (char *)malloc(total_len * 2);
+  if (!full_buf)
+    return -ENOMEM;
+
+  r = ::ceph_os_flistxattr(fd, full_buf, total_len);
+  if (r < 0)
+    return r;
+
+  char *p = full_buf;
+  char *end = full_buf + r;
+  char *dest = names;
+  char *dest_end = names + len;
+
+  while (p < end) {
+    char name[ATTR_MAX_NAME_LEN * 2 + 16];
+    int attr_len = strlen(p);
+    bool is_first;
+    int name_len = translate_raw_name(p, name, sizeof(name), &is_first);
+    if (is_first)  {
+      if (dest + name_len > dest_end) {
+        r = -ERANGE;
+        goto done;
+      }
+      strcpy(dest, name);
+      dest += name_len + 1;
+    }
+    p += attr_len + 1;
+  }
+  r = dest - names;
+
+done:
+  free(full_buf);
+  return r;
+}
+
 FileStore::FileStore(const std::string &base, const std::string &jdev, const char *name, bool do_update) :
   internal_name(name),
   basedir(base), journalpath(jdev),
