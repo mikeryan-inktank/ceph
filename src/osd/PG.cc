@@ -1556,7 +1556,7 @@ void PG::activate(ObjectStore::Transaction& t,
           new CephPeeringEvt(
             get_osdmap()->get_epoch(),
             get_osdmap()->get_epoch(),
-            ActivationComplete())));
+            AllReplicasRecovered())));
     }
 
     update_stats();

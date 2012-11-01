@@ -1475,7 +1475,7 @@ public:
 
     struct Activating : boost::statechart::state< Activating, Active >, NamedState {
       typedef boost::mpl::list <
-	boost::statechart::transition< ActivationComplete, Clean >,
+	boost::statechart::transition< AllReplicasRecovered, Recovered >,
 	boost::statechart::transition< DoRecovery, WaitLocalRecoveryReserved >,
 	boost::statechart::transition< RequestBackfill, WaitLocalBackfillReserved >
 	> reactions;
