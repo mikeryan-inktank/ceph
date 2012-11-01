@@ -1068,7 +1068,7 @@ public:
   TrivialEvent(AllRemotesReserved)
   TrivialEvent(Recovering)
   TrivialEvent(WaitRemoteBackfillReserved)
-  TrivialEvent(ActivationComplete)
+  TrivialEvent(GoClean)
 
   TrivialEvent(AllReplicasActivated)
 
@@ -1306,7 +1306,6 @@ public:
       const set<int> sorted_acting_set;
       set<int>::const_iterator acting_osd_it;
       bool all_replicas_activated;
-      bool recovery_done;
 
       typedef boost::mpl::list <
 	boost::statechart::custom_reaction< QueryState >,
@@ -1316,8 +1315,7 @@ public:
 	boost::statechart::custom_reaction< MNotifyRec >,
 	boost::statechart::custom_reaction< MLogRec >,
 	boost::statechart::custom_reaction< Backfilled >,
-	boost::statechart::custom_reaction< AllReplicasActivated >,
-	boost::statechart::custom_reaction< RecoveryDone >
+	boost::statechart::custom_reaction< AllReplicasActivated >
 	> reactions;
       boost::statechart::result react(const QueryState& q);
       boost::statechart::result react(const ActMap&);
@@ -1329,26 +1327,24 @@ public:
 	return discard_event();
       }
       boost::statechart::result react(const AllReplicasActivated&);
-      boost::statechart::result react(const RecoveryDone&);
     };
 
     struct Clean : boost::statechart::state< Clean, Active >, NamedState {
-      typedef boost::mpl::list<
-	boost::statechart::custom_reaction< ActivationComplete >
-      > reactions;
       Clean(my_context ctx);
       void exit();
-      boost::statechart::result react(const ActivationComplete&) {
-	return discard_event();
-      }
     };
 
     struct Recovered : boost::statechart::state< Recovered, Active >, NamedState {
       typedef boost::mpl::list<
-	boost::statechart::transition< ActivationComplete, Clean >
+	boost::statechart::transition< GoClean, Clean >,
+	boost::statechart::custom_reaction< AllReplicasActivated >
       > reactions;
       Recovered(my_context ctx);
       void exit();
+      boost::statechart::result react(const AllReplicasActivated&) {
+	post_event(GoClean());
+	return forward_event();
+      }
     };
 
     struct Backfilling : boost::statechart::state< Backfilling, Active >, NamedState {

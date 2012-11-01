@@ -5541,7 +5541,8 @@ PG::RecoveryState::Recovered::Recovered(my_context ctx)
 
   assert(!pg->needs_recovery());
 
-  post_event(RecoveryDone());
+  if (context< Active >().all_replicas_activated)
+    post_event(GoClean());
 }
 
 void PG::RecoveryState::Recovered::exit()
@@ -5579,8 +5580,7 @@ PG::RecoveryState::Active::Active(my_context ctx)
     sorted_acting_set(context< RecoveryMachine >().pg->acting.begin(),
                       context< RecoveryMachine >().pg->acting.end()),
     acting_osd_it(sorted_acting_set.begin()),
-    all_replicas_activated(false),
-    recovery_done(false)
+    all_replicas_activated(false)
 {
   state_name = "Started/Primary/Active";
   context< RecoveryMachine >().log_enter(state_name);
@@ -5784,16 +5784,6 @@ boost::statechart::result PG::RecoveryState::Active::react(const QueryState& q)
 boost::statechart::result PG::RecoveryState::Active::react(const AllReplicasActivated &evt)
 {
   all_replicas_activated = true;
-  if (recovery_done)
-    post_event(ActivationComplete());
-  return discard_event();
-}
-
-boost::statechart::result PG::RecoveryState::Active::react(const RecoveryDone &evt)
-{
-  recovery_done = true;
-  if (all_replicas_activated)
-    post_event(ActivationComplete());
   return discard_event();
 }
 
